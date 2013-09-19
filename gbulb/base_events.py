@@ -16,7 +16,7 @@ to modify the meaning of the API call itself.
 
 import collections
 import concurrent.futures
-import heapq
+#import heapq
 import logging
 import socket
 import subprocess
@@ -24,10 +24,10 @@ import time
 import os
 import sys
 
-from . import events
-from . import futures
-from . import tasks
-from .log import tulip_log
+from tulip import events
+from tulip import futures
+from tulip import tasks
+from tulip.log import tulip_log
 
 
 __all__ = ['BaseEventLoop']
@@ -37,12 +37,12 @@ __all__ = ['BaseEventLoop']
 _MAX_WORKERS = 5
 
 
-class _StopError(BaseException):
-    """Raised to stop the event loop."""
-
-
-def _raise_stop_error(*args):
-    raise _StopError
+#class _StopError(BaseException):
+#    """Raised to stop the event loop."""
+#
+#
+#def _raise_stop_error(*args):
+#    raise _StopError
 
 
 class BaseEventLoop(events.AbstractEventLoop):
@@ -94,99 +94,99 @@ class BaseEventLoop(events.AbstractEventLoop):
         """XXX"""
         raise NotImplementedError
 
-    def _process_events(self, event_list):
-        """Process selector events."""
-        raise NotImplementedError
-
-    def run_forever(self):
-        """Run until stop() is called."""
-        if self._running:
-            raise RuntimeError('Event loop is running.')
-        self._running = True
-        try:
-            while True:
-                try:
-                    self._run_once()
-                except _StopError:
-                    break
-        finally:
-            self._running = False
-
-    def run_until_complete(self, future):
-        """Run until the Future is done.
-
-        If the argument is a coroutine, it is wrapped in a Task.
-
-        XXX TBD: It would be disastrous to call run_until_complete()
-        with the same coroutine twice -- it would wrap it in two
-        different Tasks and that can't be good.
-
-        Return the Future's result, or raise its exception.
-        """
-        future = tasks.async(future, loop=self)
-        future.add_done_callback(_raise_stop_error)
-        self.run_forever()
-        future.remove_done_callback(_raise_stop_error)
-        if not future.done():
-            raise RuntimeError('Event loop stopped before Future completed.')
-
-        return future.result()
-
-    def stop(self):
-        """Stop running the event loop.
-
-        Every callback scheduled before stop() is called will run.
-        Callback scheduled after stop() is called won't.  However,
-        those callbacks will run if run() is called again later.
-        """
-        self.call_soon(_raise_stop_error)
-
-    def is_running(self):
-        """Returns running status of event loop."""
-        return self._running
-
-    def time(self):
-        """Return the time according to the event loop's clock."""
-        return time.monotonic()
-
-    def call_later(self, delay, callback, *args):
-        """Arrange for a callback to be called at a given time.
-
-        Return a Handle: an opaque object with a cancel() method that
-        can be used to cancel the call.
-
-        The delay can be an int or float, expressed in seconds.  It is
-        always a relative time.
-
-        Each callback will be called exactly once.  If two callbacks
-        are scheduled for exactly the same time, it undefined which
-        will be called first.
-
-        Any positional arguments after the callback will be passed to
-        the callback when it is called.
-        """
-        return self.call_at(self.time() + delay, callback, *args)
-
-    def call_at(self, when, callback, *args):
-        """Like call_later(), but uses an absolute time."""
-        timer = events.TimerHandle(when, callback, args)
-        heapq.heappush(self._scheduled, timer)
-        return timer
-
-    def call_soon(self, callback, *args):
-        """Arrange for a callback to be called as soon as possible.
-
-        This operates as a FIFO queue, callbacks are called in the
-        order in which they are registered.  Each callback will be
-        called exactly once.
-
-        Any positional arguments after the callback will be passed to
-        the callback when it is called.
-        """
-        handle = events.make_handle(callback, args)
-        self._ready.append(handle)
-        return handle
-
+#    def _process_events(self, event_list):
+#        """Process selector events."""
+#        raise NotImplementedError
+#
+#    def run_forever(self):
+#        """Run until stop() is called."""
+#        if self._running:
+#            raise RuntimeError('Event loop is running.')
+#        self._running = True
+#        try:
+#            while True:
+#                try:
+#                    self._run_once()
+#                except _StopError:
+#                    break
+#        finally:
+#            self._running = False
+#
+#    def run_until_complete(self, future):
+#        """Run until the Future is done.
+#
+#        If the argument is a coroutine, it is wrapped in a Task.
+#
+#        XXX TBD: It would be disastrous to call run_until_complete()
+#        with the same coroutine twice -- it would wrap it in two
+#        different Tasks and that can't be good.
+#
+#        Return the Future's result, or raise its exception.
+#        """
+#        future = tasks.async(future, loop=self)
+#        future.add_done_callback(_raise_stop_error)
+#        self.run_forever()
+#        future.remove_done_callback(_raise_stop_error)
+#        if not future.done():
+#            raise RuntimeError('Event loop stopped before Future completed.')
+#
+#        return future.result()
+#
+#    def stop(self):
+#        """Stop running the event loop.
+#
+#        Every callback scheduled before stop() is called will run.
+#        Callback scheduled after stop() is called won't.  However,
+#        those callbacks will run if run() is called again later.
+#        """
+#        self.call_soon(_raise_stop_error)
+#
+#    def is_running(self):
+#        """Returns running status of event loop."""
+#        return self._running
+#
+#    def time(self):
+#        """Return the time according to the event loop's clock."""
+#        return time.monotonic()
+#
+#    def call_later(self, delay, callback, *args):
+#        """Arrange for a callback to be called at a given time.
+#
+#        Return a Handle: an opaque object with a cancel() method that
+#        can be used to cancel the call.
+#
+#        The delay can be an int or float, expressed in seconds.  It is
+#        always a relative time.
+#
+#        Each callback will be called exactly once.  If two callbacks
+#        are scheduled for exactly the same time, it undefined which
+#        will be called first.
+#
+#        Any positional arguments after the callback will be passed to
+#        the callback when it is called.
+#        """
+#        return self.call_at(self.time() + delay, callback, *args)
+#
+#    def call_at(self, when, callback, *args):
+#        """Like call_later(), but uses an absolute time."""
+#        timer = events.TimerHandle(when, callback, args)
+#        heapq.heappush(self._scheduled, timer)
+#        return timer
+#
+#    def call_soon(self, callback, *args):
+#        """Arrange for a callback to be called as soon as possible.
+#
+#        This operates as a FIFO queue, callbacks are called in the
+#        order in which they are registered.  Each callback will be
+#        called exactly once.
+#
+#        Any positional arguments after the callback will be passed to
+#        the callback when it is called.
+#        """
+#        handle = events.make_handle(callback, args)
+#        self._ready.append(handle)
+#        return handle
+#
     def call_soon_threadsafe(self, callback, *args):
         """XXX"""
         handle = self.call_soon(callback, *args)
@@ -494,74 +494,74 @@ class BaseEventLoop(events.AbstractEventLoop):
             extra={}, **kwargs)
         return transport, protocol
 
-    def _add_callback(self, handle):
-        """Add a Handle to ready or scheduled."""
-        assert isinstance(handle, events.Handle), 'A Handle is required here'
-        if handle._cancelled:
-            return
-        if isinstance(handle, events.TimerHandle):
-            heapq.heappush(self._scheduled, handle)
-        else:
-            self._ready.append(handle)
-
-    def _add_callback_signalsafe(self, handle):
-        """Like _add_callback() but called from a signal handler."""
-        self._add_callback(handle)
-        self._write_to_self()
-
-    def _run_once(self):
-        """Run one full iteration of the event loop.
-
-        This calls all currently ready callbacks, polls for I/O,
-        schedules the resulting callbacks, and finally schedules
-        'call_later' callbacks.
-        """
-        # Remove delayed calls that were cancelled from head of queue.
-        while self._scheduled and self._scheduled[0]._cancelled:
-            heapq.heappop(self._scheduled)
-
-        timeout = None
-        if self._ready:
-            timeout = 0
-        elif self._scheduled:
-            # Compute the desired timeout.
-            when = self._scheduled[0]._when
-            deadline = max(0, when - self.time())
-            if timeout is None:
-                timeout = deadline
-            else:
-                timeout = min(timeout, deadline)
-
-        # TODO: Instrumentation only in debug mode?
-        t0 = self.time()
-        event_list = self._selector.select(timeout)
-        t1 = self.time()
-        argstr = '' if timeout is None else '{:.3f}'.format(timeout)
-        if t1-t0 >= 1:
-            level = logging.INFO
-        else:
-            level = logging.DEBUG
-        tulip_log.log(level, 'poll%s took %.3f seconds', argstr, t1-t0)
-        self._process_events(event_list)
-
-        # Handle 'later' callbacks that are ready.
-        now = self.time()
-        while self._scheduled:
-            handle = self._scheduled[0]
-            if handle._when > now:
-                break
-            handle = heapq.heappop(self._scheduled)
-            self._ready.append(handle)
-
-        # This is the only place where callbacks are actually *called*.
-        # All other places just add them to ready.
-        # Note: We run all currently scheduled callbacks, but not any
-        # callbacks scheduled by callbacks run this time around --
-        # they will be run the next time (after another I/O poll).
-        # Use an idiom that is threadsafe without using locks.
-        ntodo = len(self._ready)
-        for i in range(ntodo):
-            handle = self._ready.popleft()
-            if not handle._cancelled:
-                handle._run()
-        handle = None  # Needed to break cycles when an exception occurs.
+#    def _add_callback(self, handle):
+#        """Add a Handle to ready or scheduled."""
+#        assert isinstance(handle, events.Handle), 'A Handle is required here'
+#        if handle._cancelled:
+#            return
+#        if isinstance(handle, events.TimerHandle):
+#            heapq.heappush(self._scheduled, handle)
+#        else:
+#            self._ready.append(handle)
+#
+#    def _add_callback_signalsafe(self, handle):
+#        """Like _add_callback() but called from a signal handler."""
+#        self._add_callback(handle)
+#        self._write_to_self()
+#
+#    def _run_once(self):
+#        """Run one full iteration of the event loop.
+#
+#        This calls all currently ready callbacks, polls for I/O,
+#        schedules the resulting callbacks, and finally schedules
+#        'call_later' callbacks.
+#        """
+#        # Remove delayed calls that were cancelled from head of queue.
+#        while self._scheduled and self._scheduled[0]._cancelled:
+#            heapq.heappop(self._scheduled)
+#
+#        timeout = None
+#        if self._ready:
+#            timeout = 0
+#        elif self._scheduled:
+#            # Compute the desired timeout.
+#            when = self._scheduled[0]._when
+#            deadline = max(0, when - self.time())
+#            if timeout is None:
+#                timeout = deadline
+#            else:
+#                timeout = min(timeout, deadline)
+#
+#        # TODO: Instrumentation only in debug mode?
+#        t0 = self.time()
+#        event_list = self._selector.select(timeout)
+#        t1 = self.time()
+#        argstr = '' if timeout is None else '{:.3f}'.format(timeout)
+#        if t1-t0 >= 1:
+#            level = logging.INFO
+#        else:
+#            level = logging.DEBUG
+#        tulip_log.log(level, 'poll%s took %.3f seconds', argstr, t1-t0)
+#        self._process_events(event_list)
+#
+#        # Handle 'later' callbacks that are ready.
+#        now = self.time()
+#        while self._scheduled:
+#            handle = self._scheduled[0]
+#            if handle._when > now:
+#                break
+#            handle = heapq.heappop(self._scheduled)
+#            self._ready.append(handle)
+#
+#        # This is the only place where callbacks are actually *called*.
+#        # All other places just add them to ready.
+#        # Note: We run all currently scheduled callbacks, but not any
+#        # callbacks scheduled by callbacks run this time around --
+#        # they will be run the next time (after another I/O poll).
+#        # Use an idiom that is threadsafe without using locks.
+#        ntodo = len(self._ready)
+#        for i in range(ntodo):
+#            handle = self._ready.popleft()
+#            if not handle._cancelled:
+#                handle._run()
+#        handle = None  # Needed to break cycles when an exception occurs.

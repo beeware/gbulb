@@ -12,12 +12,12 @@ except ImportError:  # pragma: no cover
     ssl = None
 
 from . import base_events
-from . import constants
-from . import events
-from . import futures
-from . import selectors
-from . import transports
-from .log import tulip_log
+from tulip import constants
+from tulip import events
+from tulip import futures
+from tulip import selectors
+from tulip import transports
+from tulip.log import tulip_log
 
 
 class BaseSelectorEventLoop(base_events.BaseEventLoop):
@@ -29,10 +29,10 @@ class BaseSelectorEventLoop(base_events.BaseEventLoop):
     def __init__(self, selector=None):
         super().__init__()
 
-        if selector is None:
-            selector = selectors.DefaultSelector()
-        tulip_log.debug('Using selector: %s', selector.__class__.__name__)
-        self._selector = selector
+#        if selector is None:
+#            selector = selectors.DefaultSelector()
+#        tulip_log.debug('Using selector: %s', selector.__class__.__name__)
+#        self._selector = selector
         self._make_self_pipe()
 
     def _make_socket_transport(self, sock, protocol, waiter=None, *,
@@ -49,10 +49,11 @@ class BaseSelectorEventLoop(base_events.BaseEventLoop):
         return _SelectorDatagramTransport(self, sock, protocol, address, extra)
 
     def close(self):
-        if self._selector is not None:
+        if self._ssock is not None:
+#        if self._selector is not None:
             self._close_self_pipe()
-            self._selector.close()
-            self._selector = None
+#            self._selector.close()
+#            self._selector = None
 
     def _socketpair(self):
         raise NotImplementedError
@@ -112,76 +113,76 @@ class BaseSelectorEventLoop(base_events.BaseEventLoop):
                     conn, protocol_factory(), extra={'addr': addr})
         # It's now up to the protocol to handle the connection.
 
-    def add_reader(self, fd, callback, *args):
-        """Add a reader callback."""
-        handle = events.make_handle(callback, args)
-        try:
-            key = self._selector.get_key(fd)
-        except KeyError:
-            self._selector.register(fd, selectors.EVENT_READ,
-                                    (handle, None))
-        else:
-            mask, (reader, writer) = key.events, key.data
-            self._selector.modify(fd, mask | selectors.EVENT_READ,
-                                  (handle, writer))
-            if reader is not None:
-                reader.cancel()
-
-    def remove_reader(self, fd):
-        """Remove a reader callback."""
-        try:
-            key = self._selector.get_key(fd)
-        except KeyError:
-            return False
-        else:
-            mask, (reader, writer) = key.events, key.data
-            mask &= ~selectors.EVENT_READ
-            if not mask:
-                self._selector.unregister(fd)
-            else:
-                self._selector.modify(fd, mask, (None, writer))
-
-            if reader is not None:
-                reader.cancel()
-                return True
-            else:
-                return False
-
-    def add_writer(self, fd, callback, *args):
-        """Add a writer callback.."""
-        handle = events.make_handle(callback, args)
-        try:
-            key = self._selector.get_key(fd)
-        except KeyError:
-            self._selector.register(fd, selectors.EVENT_WRITE,
-                                    (None, handle))
-        else:
-            mask, (reader, writer) = key.events, key.data
-            self._selector.modify(fd, mask | selectors.EVENT_WRITE,
-                                  (reader, handle))
-            if writer is not None:
-                writer.cancel()
-
-    def remove_writer(self, fd):
-        """Remove a writer callback."""
-        try:
-            key = self._selector.get_key(fd)
-        except KeyError:
-            return False
-        else:
-            mask, (reader, writer) = key.events, key.data
-            # Remove both writer and connector.
-            mask &= ~selectors.EVENT_WRITE
-            if not mask:
-                self._selector.unregister(fd)
-            else:
-                self._selector.modify(fd, mask, (reader, None))
-
-            if writer is not None:
-                writer.cancel()
-                return True
-            else:
-                return False
+#    def add_reader(self, fd, callback, *args):
+#        """Add a reader callback."""
+#        handle = events.make_handle(callback, args)
+#        try:
+#            key = self._selector.get_key(fd)
+#        except KeyError:
+#            self._selector.register(fd, selectors.EVENT_READ,
+#                                    (handle, None))
+#        else:
+#            mask, (reader, writer) = key.events, key.data
+#            self._selector.modify(fd, mask | selectors.EVENT_READ,
+#                                  (handle, writer))
+#            if reader is not None:
+#                reader.cancel()
+#
+#    def remove_reader(self, fd):
+#        """Remove a reader callback."""
+#        try:
+#            key = self._selector.get_key(fd)
+#        except KeyError:
+#            return False
+#        else:
+#            mask, (reader, writer) = key.events, key.data
+#            mask &= ~selectors.EVENT_READ
+#            if not mask:
+#                self._selector.unregister(fd)
+#            else:
+#                self._selector.modify(fd, mask, (None, writer))
+#
+#            if reader is not None:
+#                reader.cancel()
+#                return True
+#            else:
+#                return False
+#
+#    def add_writer(self, fd, callback, *args):
+#        """Add a writer callback.."""
+#        handle = events.make_handle(callback, args)
+#        try:
+#            key = self._selector.get_key(fd)
+#        except KeyError:
+#            self._selector.register(fd, selectors.EVENT_WRITE,
+#                                    (None, handle))
+#        else:
+#            mask, (reader, writer) = key.events, key.data
+#            self._selector.modify(fd, mask | selectors.EVENT_WRITE,
+#                                  (reader, handle))
+#            if writer is not None:
+#                writer.cancel()
+#
+#    def remove_writer(self, fd):
+#        """Remove a writer callback."""
+#        try:
+#            key = self._selector.get_key(fd)
+#        except KeyError:
+#            return False
+#        else:
+#            mask, (reader, writer) = key.events, key.data
+#            # Remove both writer and connector.
+#            mask &= ~selectors.EVENT_WRITE
+#            if not mask:
+#                self._selector.unregister(fd)
+#            else:
+#                self._selector.modify(fd, mask, (reader, None))
+#
+#            if writer is not None:
+#                writer.cancel()
+#                return True
+#            else:
+#                return False
 
     def sock_recv(self, sock, n):
         """XXX"""
@@ -301,19 +302,19 @@ class BaseSelectorEventLoop(base_events.BaseEventLoop):
         else:
             fut.set_result((conn, address))
 
-    def _process_events(self, event_list):
-        for key, mask in event_list:
-            fileobj, (reader, writer) = key.fileobj, key.data
-            if mask & selectors.EVENT_READ and reader is not None:
-                if reader._cancelled:
-                    self.remove_reader(fileobj)
-                else:
-                    self._add_callback(reader)
-            if mask & selectors.EVENT_WRITE and writer is not None:
-                if writer._cancelled:
-                    self.remove_writer(fileobj)
-                else:
-                    self._add_callback(writer)
+#    def _process_events(self, event_list):
+#        for key, mask in event_list:
+#            fileobj, (reader, writer) = key.fileobj, key.data
+#            if mask & selectors.EVENT_READ and reader is not None:
+#                if reader._cancelled:
+#                    self.remove_reader(fileobj)
+#                else:
+#                    self._add_callback(reader)
+#            if mask & selectors.EVENT_WRITE and writer is not None:
+#                if writer._cancelled:
+#                    self.remove_writer(fileobj)
+#                else:
+#                    self._add_callback(writer)
 
     def stop_serving(self, sock):
         self.remove_reader(sock.fileno())

@@ -12,20 +12,20 @@ import subprocess
 import sys
 
 
-from . import constants
-from . import events
-from . import protocols
-from . import selector_events
-from . import tasks
-from . import transports
-from .log import tulip_log
+from tulip import constants
+from tulip import events
+from tulip import protocols
+from .     import selector_events
+from tulip import tasks
+from tulip import transports
+from tulip.log import tulip_log
 
 
 __all__ = ['SelectorEventLoop']
 
 
-if sys.platform == 'win32':  # pragma: no cover
-    raise ImportError('Signals are not really supported on Windows')
+#if sys.platform == 'win32':  # pragma: no cover
+#    raise ImportError('Signals are not really supported on Windows')
 
 
 class SelectorEventLoop(selector_events.BaseSelectorEventLoop):
@@ -34,95 +34,95 @@ class SelectorEventLoop(selector_events.BaseSelectorEventLoop):
     Adds signal handling to SelectorEventLoop
     """
 
-    def __init__(self, selector=None):
-        super().__init__(selector)
-        self._signal_handlers = {}
+    def __init__(self):
+        super().__init__()
+#        self._signal_handlers = {}
         self._subprocesses = {}
 
     def _socketpair(self):
         return socket.socketpair()
 
-    def close(self):
-        handler = self._signal_handlers.get(signal.SIGCHLD)
-        if handler is not None:
-            self.remove_signal_handler(signal.SIGCHLD)
-        super().close()
-
-    def add_signal_handler(self, sig, callback, *args):
-        """Add a handler for a signal.  UNIX only.
-
-        Raise ValueError if the signal number is invalid or uncatchable.
-        Raise RuntimeError if there is a problem setting up the handler.
-        """
-        self._check_signal(sig)
-        try:
-            # set_wakeup_fd() raises ValueError if this is not the
-            # main thread.  By calling it early we ensure that an
-            # event loop running in another thread cannot add a signal
-            # handler.
-            signal.set_wakeup_fd(self._csock.fileno())
-        except ValueError as exc:
-            raise RuntimeError(str(exc))
-
-        handle = events.make_handle(callback, args)
-        self._signal_handlers[sig] = handle
-
-        try:
-            signal.signal(sig, self._handle_signal)
-        except OSError as exc:
-            del self._signal_handlers[sig]
-            if not self._signal_handlers:
-                try:
-                    signal.set_wakeup_fd(-1)
-                except ValueError as nexc:
-                    tulip_log.info('set_wakeup_fd(-1) failed: %s', nexc)
-
-            if exc.errno == errno.EINVAL:
-                raise RuntimeError('sig {} cannot be caught'.format(sig))
-            else:
-                raise
-
-    def _handle_signal(self, sig, arg):
-        """Internal helper that is the actual signal handler."""
-        handle = self._signal_handlers.get(sig)
-        if handle is None:
-            return  # Assume it's some race condition.
-        if handle._cancelled:
-            self.remove_signal_handler(sig)  # Remove it properly.
-        else:
-            self._add_callback_signalsafe(handle)
-
-    def remove_signal_handler(self, sig):
-        """Remove a handler for a signal.  UNIX only.
-
-        Return True if a signal handler was removed, False if not.
-        """
-        self._check_signal(sig)
-        try:
-            del self._signal_handlers[sig]
-        except KeyError:
-            return False
-
-        if sig == signal.SIGINT:
-            handler = signal.default_int_handler
-        else:
-            handler = signal.SIG_DFL
-
-        try:
-            signal.signal(sig, handler)
-        except OSError as exc:
-            if exc.errno == errno.EINVAL:
-                raise RuntimeError('sig {} cannot be caught'.format(sig))
-            else:
-                raise
-
-        if not self._signal_handlers:
-            try:
-                signal.set_wakeup_fd(-1)
-            except ValueError as exc:
-                tulip_log.info('set_wakeup_fd(-1) failed: %s', exc)
-
-        return True
+#    def close(self):
+#        handler = self._signal_handlers.get(signal.SIGCHLD)
+#        if handler is not None:
+#            self.remove_signal_handler(signal.SIGCHLD)
+#        super().close()
+#
+#    def add_signal_handler(self, sig, callback, *args):
+#        """Add a handler for a signal.  UNIX only.
+#
+#        Raise ValueError if the signal number is invalid or uncatchable.
+#        Raise RuntimeError if there is a problem setting up the handler.
+#        """
+#        self._check_signal(sig)
+#        try:
+#            # set_wakeup_fd() raises ValueError if this is not the
+#            # main thread.  By calling it early we ensure that an
+#            # event loop running in another thread cannot add a signal
+#            # handler.
+#            signal.set_wakeup_fd(self._csock.fileno())
+#        except ValueError as exc:
+#            raise RuntimeError(str(exc))
+#
+#        handle = events.make_handle(callback, args)
+#        self._signal_handlers[sig] = handle
+#
+#        try:
+#            signal.signal(sig, self._handle_signal)
+#        except OSError as exc:
+#            del self._signal_handlers[sig]
+#            if not self._signal_handlers:
+#                try:
+#                    signal.set_wakeup_fd(-1)
+#                except ValueError as nexc:
+#                    tulip_log.info('set_wakeup_fd(-1) failed: %s', nexc)
+#
+#            if exc.errno == errno.EINVAL:
+#                raise RuntimeError('sig {} cannot be caught'.format(sig))
+#            else:
+#                raise
+#
+#    def _handle_signal(self, sig, arg):
+#        """Internal helper that is the actual signal handler."""
+#        handle = self._signal_handlers.get(sig)
+#        if handle is None:
+#            return  # Assume it's some race condition.
+#        if handle._cancelled:
+#            self.remove_signal_handler(sig)  # Remove it properly.
+#        else:
+#            self._add_callback_signalsafe(handle)
+#
+#    def remove_signal_handler(self, sig):
+#        """Remove a handler for a signal.  UNIX only.
+#
+#        Return True if a signal handler was removed, False if not.
+#        """
+#        self._check_signal(sig)
+#        try:
+#            del self._signal_handlers[sig]
+#        except KeyError:
+#            return False
+#
+#        if sig == signal.SIGINT:
+#            handler = signal.default_int_handler
+#        else:
+#            handler = signal.SIG_DFL
+#
+#        try:
+#            signal.signal(sig, handler)
+#        except OSError as exc:
+#            if exc.errno == errno.EINVAL:
+#                raise RuntimeError('sig {} cannot be caught'.format(sig))
+#            else:
+#                raise
+#
+#        if not self._signal_handlers:
+#            try:
+#                signal.set_wakeup_fd(-1)
+#            except ValueError as exc:
+#                tulip_log.info('set_wakeup_fd(-1) failed: %s', exc)
+#
+#        return True
 
     def _check_signal(self, sig):
         """Internal helper to validate a signal.
@@ -149,45 +149,60 @@ class SelectorEventLoop(selector_events.BaseSelectorEventLoop):
     def _make_subprocess_transport(self, protocol, args, shell,
                                    stdin, stdout, stderr, bufsize,
                                    extra=None, **kwargs):
-        self._reg_sigchld()
+#        self._reg_sigchld()
         transp = _UnixSubprocessTransport(self, protocol, args, shell,
                                           stdin, stdout, stderr, bufsize,
                                           extra=None, **kwargs)
+        self._add_child_handler(transp.get_pid(), self._sig_chld_callback, transp.get_pid())
         self._subprocesses[transp.get_pid()] = transp
         yield from transp._post_init()
         return transp
 
-    def _reg_sigchld(self):
-        if signal.SIGCHLD not in self._signal_handlers:
-            self.add_signal_handler(signal.SIGCHLD, self._sig_chld)
+    def _sig_chld_callback(self, pid, returncode):
+        print ("sigchld callback", pid, returncode)
+        transp = self._subprocesses.get(pid)
+        if transp is not None:
+            transp._process_exited(returncode)
 
-    def _sig_chld(self):
-        try:
-            while True:
-                try:
-                    pid, status = os.waitpid(0, os.WNOHANG)
-                except ChildProcessError:
-                    break
-                if pid == 0:
-                    continue
-                elif os.WIFSIGNALED(status):
-                    returncode = -os.WTERMSIG(status)
-                elif os.WIFEXITED(status):
-                    returncode = os.WEXITSTATUS(status)
-                else:
-                    # covered by
-                    # SelectorEventLoopTests.test__sig_chld_unknown_status
-                    # from tests/unix_events_test.py
-                    # bug in coverage.py version 3.6 ???
-                    continue  # pragma: no cover
-                transp = self._subprocesses.get(pid)
-                if transp is not None:
-                    transp._process_exited(returncode)
-        except Exception:
-            tulip_log.exception('Unknown exception in SIGCHLD handler')
+#TODO: use GLib
+    #FIXME: PEP 3156 says that only the main thread is allowed to handle
+    # signals
+    #   -> raise RuntimeError if this particular event loop instance cannot
+    #   handle signals (since signals are global per process, only an event
+    #   loop associated with the main thread can handle signals).
+    # -> need an interface between the main and child threads
+#    def _reg_sigchld(self):
+#        if signal.SIGCHLD not in self._signal_handlers:
+#            self.add_signal_handler(signal.SIGCHLD, self._sig_chld)
+#
+#    def _sig_chld(self):
+#        try:
+#            while True:
+#                try:
+#                    pid, status = os.waitpid(0, os.WNOHANG)
+#                except ChildProcessError:
+#                    break
+#                if pid == 0:
+#                    continue
+#                elif os.WIFSIGNALED(status):
+#                    returncode = -os.WTERMSIG(status)
+#                elif os.WIFEXITED(status):
+#                    returncode = os.WEXITSTATUS(status)
+#                else:
+#                    # covered by
+#                    # SelectorEventLoopTests.test__sig_chld_unknown_status
+#                    # from tests/unix_events_test.py
+#                    # bug in coverage.py version 3.6 ???
+#                    continue  # pragma: no cover
+#                transp = self._subprocesses.get(pid)
+#                if transp is not None:
+#                    transp._process_exited(returncode)
+#        except Exception:
+#            tulip_log.exception('Unknown exception in SIGCHLD handler')
 
     def _subprocess_closed(self, transport):
         pid = transport.get_pid()
+        self._remove_child_handler(pid)
         self._subprocesses.pop(pid, None)
 
 
