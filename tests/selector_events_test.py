@@ -7,6 +7,7 @@ import socket
 import sys
 import unittest
 import unittest.mock
+import collections
 try:
     import ssl
 except ImportError:
@@ -23,8 +24,32 @@ from tulip.selector_events import _SelectorSslTransport
 from tulip.selector_events import _SelectorSocketTransport
 from tulip.selector_events import _SelectorDatagramTransport
 
+import gbulb
+from gi.repository import GLib
+from gi.repository import GObject
 
-class TestBaseSelectorEventLoop(BaseSelectorEventLoop):
+gbulb.BaseGLibEventLoop.init_class()
+GObject.threads_init()
+
+class GLibTestLoop(gbulb.GLibEventLoop):
+
+    def __init__(self,*k):
+        self.reset_counters()
+        super().__init__(*k)
+        
+    def reset_counters(self):
+        self.remove_reader_count = collections.defaultdict(int)
+        self.remove_writer_count = collections.defaultdict(int)
+
+    def remove_reader(self, fd):
+        self.remove_reader_count[fd] += 1
+        super().remove_reader(fd)
+
+    def remove_writer(self, fd):
+        self.remove_writer_count[fd] += 1
+        super().remove_writer(fd)
+
+class TestBaseSelectorEventLoop(GLibTestLoop):
 
     def _make_self_pipe(self):
         self._ssock = unittest.mock.Mock()
@@ -86,6 +111,7 @@ class BaseSelectorEventLoopTests(unittest.TestCase):
         self.assertFalse(csock.close.called)
         self.assertFalse(remove_reader.called)
 
+    @unittest.skip
     def test_socketpair(self):
         self.assertRaises(NotImplementedError, self.loop._socketpair)
 
@@ -571,7 +597,7 @@ class BaseSelectorEventLoopTests(unittest.TestCase):
 class SelectorTransportTests(unittest.TestCase):
 
     def setUp(self):
-        self.loop = test_utils.TestLoop()
+        self.loop = GLibTestLoop(GLib.main_context_default())#test_utils.TestLoop()
         self.protocol = test_utils.make_test_protocol(Protocol)
         self.sock = unittest.mock.Mock(socket.socket)
         self.sock.fileno.return_value = 7
@@ -1469,3 +1495,6 @@ class SelectorDatagramTransportTests(unittest.TestCase):
         transport._fatal_error(err)
         self.protocol.connection_refused.assert_called_with(err)
         m_exc.assert_called_with('Fatal error for %s', transport)
+
+if __name__ == '__main__':
+    unittest.main()
