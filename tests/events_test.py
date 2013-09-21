@@ -1,5 +1,6 @@
 """Tests for events.py."""
 
+#TODO: port the Handle and Policy tests
 import functools
 import gc
 import io
@@ -29,7 +30,9 @@ from tulip import selector_events
 from tulip import tasks
 from tulip import test_utils
 from tulip import locks
-
+import gbulb
+from gi.repository import GLib
+from gi.repository import GObject
 
 class MyProto(protocols.Protocol):
     done = None
@@ -436,7 +439,8 @@ class EventLoopTestsMixin:
         # Removing again returns False.
         self.assertFalse(self.loop.remove_signal_handler(signal.SIGINT))
 
-    @unittest.skipUnless(hasattr(signal, 'SIGALRM'), 'No SIGALRM')
+    # SIGALRM not supported by GLib
+    @unittest.skipUnless(0 and hasattr(signal, 'SIGALRM'), 'No SIGALRM')
     def test_signal_handling_while_selecting(self):
         # Test with a signal actually arriving during a select() call.
         caught = 0
@@ -452,7 +456,7 @@ class EventLoopTestsMixin:
         self.loop.run_forever()
         self.assertEqual(caught, 1)
 
-    @unittest.skipUnless(hasattr(signal, 'SIGALRM'), 'No SIGALRM')
+    @unittest.skipUnless(0 and hasattr(signal, 'SIGALRM'), 'No SIGALRM')
     def test_signal_handling_args(self):
         some_args = (42,)
         caught = 0
@@ -564,7 +568,8 @@ class EventLoopTestsMixin:
         client.send(b'xxx')
         test_utils.run_briefly(self.loop)
         self.assertIsInstance(proto, MyProto)
-        self.assertEqual('INITIAL', proto.state)
+#run_briefly() cannot guarantee that we run a single iteration (in the GLib loop)
+#        self.assertEqual('INITIAL', proto.state)
         test_utils.run_briefly(self.loop)
         self.assertEqual('CONNECTED', proto.state)
         test_utils.run_briefly(self.loop)  # windows iocp
@@ -1260,30 +1265,43 @@ else:
     from tulip import selectors
     from tulip import unix_events
 
-    if hasattr(selectors, 'KqueueSelector'):
-        class KqueueEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
+#    if hasattr(selectors, 'KqueueSelector'):
+#        class KqueueEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
+#
+#            def create_event_loop(self):
+#                return unix_events.SelectorEventLoop(
+#                    selectors.KqueueSelector())
+#
+#    if hasattr(selectors, 'EpollSelector'):
+#        class EPollEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
+#
+#            def create_event_loop(self):
+#                return unix_events.SelectorEventLoop(selectors.EpollSelector())
+#
+#    if hasattr(selectors, 'PollSelector'):
+#        class PollEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
+#
+#            def create_event_loop(self):
+#                return unix_events.SelectorEventLoop(selectors.PollSelector())
+#
+#    # Should always exist.
+#    class SelectEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
+#
+#        def create_event_loop(self):
+#            return unix_events.SelectorEventLoop(selectors.SelectSelector())
 
-            def create_event_loop(self):
-                return unix_events.SelectorEventLoop(
-                    selectors.KqueueSelector())
+    gbulb.BaseGLibEventLoop.init_class()
+    GObject.threads_init()
 
-    if hasattr(selectors, 'EpollSelector'):
-        class EPollEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
-
-            def create_event_loop(self):
-                return unix_events.SelectorEventLoop(selectors.EpollSelector())
-
-    if hasattr(selectors, 'PollSelector'):
-        class PollEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
-
-            def create_event_loop(self):
-                return unix_events.SelectorEventLoop(selectors.PollSelector())
-
-    # Should always exist.
-    class SelectEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
+    class GLibEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
 
         def create_event_loop(self):
-            return unix_events.SelectorEventLoop(selectors.SelectSelector())
+            return gbulb.GLibEventLoop(GLib.main_context_default())
+
+    class GtkEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
+
+        def create_event_loop(self):
+            return gbulb.GtkEventLoop()
 
 
 class HandleTests(unittest.TestCase):
