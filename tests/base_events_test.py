@@ -13,14 +13,21 @@ from tulip import protocols
 from tulip import tasks
 from tulip import test_utils
 
+import gbulb
+from gi.repository import GLib
+from gi.repository import GObject
+
+gbulb.BaseGLibEventLoop.init_class()
+GObject.threads_init()
 
 class BaseEventLoopTests(unittest.TestCase):
 
     def setUp(self):
-        self.loop = base_events.BaseEventLoop()
+        self.loop = gbulb.GLibEventLoop(GLib.main_context_default())
         self.loop._selector = unittest.mock.Mock()
         events.set_event_loop(None)
 
+    @unittest.skip
     def test_not_implemented(self):
         m = unittest.mock.Mock()
         self.assertRaises(
@@ -48,6 +55,7 @@ class BaseEventLoopTests(unittest.TestCase):
             NotImplementedError,
             next, self.loop._make_subprocess_transport(m, m, m, m, m, m, m))
 
+    @unittest.skip
     def test__add_callback_handle(self):
         h = events.Handle(lambda: False, ())
 
@@ -55,12 +63,14 @@ class BaseEventLoopTests(unittest.TestCase):
         self.assertFalse(self.loop._scheduled)
         self.assertIn(h, self.loop._ready)
 
+    @unittest.skip
     def test__add_callback_timer(self):
         h = events.TimerHandle(time.monotonic()+10, lambda: False, ())
 
         self.loop._add_callback(h)
         self.assertIn(h, self.loop._scheduled)
 
+    @unittest.skip
     def test__add_callback_cancelled_handle(self):
         h = events.Handle(lambda: False, ())
         h.cancel()
@@ -96,8 +106,8 @@ class BaseEventLoopTests(unittest.TestCase):
             pass
 
         h = self.loop.call_later(10.0, cb)
-        self.assertIsInstance(h, events.TimerHandle)
-        self.assertIn(h, self.loop._scheduled)
+        self.assertIsInstance(h, gbulb.GLibHandle)
+#        self.assertIn(h, self.loop._scheduled)
         self.assertNotIn(h, self.loop._ready)
 
     def test_call_later_negative_delays(self):
@@ -167,6 +177,7 @@ class BaseEventLoopTests(unittest.TestCase):
 
         f.cancel()  # Don't complain about abandoned Future.
 
+    @unittest.skip
     def test__run_once(self):
         h1 = events.TimerHandle(time.monotonic() + 0.1, lambda: True, ())
         h2 = events.TimerHandle(time.monotonic() + 10.0, lambda: True, ())
@@ -183,6 +194,7 @@ class BaseEventLoopTests(unittest.TestCase):
         self.assertEqual([h2], self.loop._scheduled)
         self.assertTrue(self.loop._process_events.called)
 
+    @unittest.skip
     @unittest.mock.patch('tulip.base_events.time')
     @unittest.mock.patch('tulip.base_events.tulip_log')
     def test__run_once_logging(self, m_logging, m_time):
@@ -211,6 +223,7 @@ class BaseEventLoopTests(unittest.TestCase):
         self.loop._run_once()
         self.assertEqual(logging.DEBUG, m_logging.log.call_args[0][0])
 
+    @unittest.skip
     def test__run_once_schedule_handle(self):
         handle = None
         processed = False
@@ -590,3 +603,6 @@ class BaseEventLoopWithSelectorTests(unittest.TestCase):
         self.loop._accept_connection(MyProto, sock)
         self.assertTrue(sock.close.called)
         self.assertTrue(m_log.exception.called)
+
+if __name__ == '__main__':
+    unittest.main()
