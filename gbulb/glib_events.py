@@ -150,8 +150,8 @@ class BaseGlibEventLoop(unix_events.SelectorEventLoop):
     class DefaultSigINTHandler:
         def __init__(self):
             s = GLib.unix_signal_source_new(signal.SIGINT)
-            s.attach()
             s.set_callback(self.__class__._callback, self)
+            s.attach()
 
             self._source = s
             self._loop   = None
@@ -243,8 +243,8 @@ class BaseGlibEventLoop(unix_events.SelectorEventLoop):
                 return False
 
         self._wakeup = GLib.Timeout(0)
-        self._wakeup.attach(self._context)
         self._wakeup.set_callback(wakeup_cb, self)
+        self._wakeup.attach(self._context)
 
 #		print("dispatch leave", self._ready)
 
