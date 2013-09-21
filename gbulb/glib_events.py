@@ -139,7 +139,7 @@ class GLibChildHandle(events.Handle):
 #
 # about SIGINT -> KeyboardInterrupt will never be raised asynchronously
 
-class BaseGlibEventLoop(unix_events.SelectorEventLoop):
+class BaseGLibEventLoop(unix_events.SelectorEventLoop):
     """GLib base event loop
 
     This class handles only the operations related to Glib.MainContext objects.
@@ -185,8 +185,8 @@ class BaseGlibEventLoop(unix_events.SelectorEventLoop):
 
     @staticmethod
     def init_class():
-        if not hasattr(BaseGlibEventLoop, "_default_sigint_handler"):
-            BaseGlibEventLoop._default_sigint_handler = BaseGlibEventLoop.DefaultSigINTHandler()
+        if not hasattr(BaseGLibEventLoop, "_default_sigint_handler"):
+            BaseGLibEventLoop._default_sigint_handler = BaseGLibEventLoop.DefaultSigINTHandler()
 
     def __init__(self, glib_context=None):
 
@@ -206,7 +206,7 @@ class BaseGlibEventLoop(unix_events.SelectorEventLoop):
         # install a default handler for SIGINT
         # in the default context
         if self._context == GLib.main_context_default():
-            assert hasattr(self, "_default_sigint_handler"), "Must call BaseGlibEventLoop.init_class() first"
+            assert hasattr(self, "_default_sigint_handler"), "Must call BaseGLibEventLoop.init_class() first"
             self._default_sigint_handler.attach(self)
 
     def _dispatch(self):
@@ -517,7 +517,7 @@ class BaseGlibEventLoop(unix_events.SelectorEventLoop):
             return False
 
 
-class GLibEventLoop(BaseGlibEventLoop):
+class GLibEventLoop(BaseGLibEventLoop):
     """GLib event loop
 
     See the module documentation for more details
@@ -592,7 +592,7 @@ class GLibEventLoop(BaseGlibEventLoop):
         return self._mainloop is not None
 
 
-class GtkEventLoop(BaseGlibEventLoop):
+class GtkEventLoop(BaseGLibEventLoop):
     """Gtk event loop
 
     See the module documentation for more details
@@ -683,7 +683,7 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         self.get_event_loop = self._policy.get_event_loop
         self.set_event_loop = self._policy.set_event_loop
 
-        BaseGlibEventLoop.init_class()
+        BaseGLibEventLoop.init_class()
 
         if threads:
             tulip_log.info("GLib threads enabled")
