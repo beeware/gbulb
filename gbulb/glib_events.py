@@ -68,13 +68,10 @@ class GLibChildHandle(events.Handle):
 
     @staticmethod
     def _callback(pid, status, self):
-        print("Child callback", pid, status, self)
 
         if os.WIFSIGNALED(status):
-            print("signaled!")
             returncode = -os.WTERMSIG(status)
         elif os.WIFEXITED(status):
-            print("exited!")
             returncode = os.WEXITSTATUS(status)
 
             #FIXME: Hack for adjusting invalid status returned by GLIB
@@ -83,7 +80,6 @@ class GLibChildHandle(events.Handle):
                 returncode = 128 - returncode
         else:
             returncode = None
-        print("-> returncode", returncode)
 
         self._args += returncode,
 
@@ -210,7 +206,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
             self._default_sigint_handler.attach(self)
 
     def _dispatch(self):
-#		print("dispatch enter", self._ready)
         # This is the only place where callbacks are actually *called*. All
         # other places just add them to ready. Note: We run all currently
         # scheduled callbacks, but not any callbacks scheduled by callbacks run
@@ -223,7 +218,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         for i in range(ntodo):
             handle = self._ready.popleft()
             if not handle._cancelled:
-                print ("dispatch", handle)
                 handle._run()
 
         self._schedule_dispatch()
@@ -246,7 +240,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         self._wakeup.set_callback(wakeup_cb, self)
         self._wakeup.attach(self._context)
 
-#		print("dispatch leave", self._ready)
 
     def run_until_complete(self, future):
         """Run the event loop until a Future is done.
@@ -287,7 +280,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
 
     # Methods scheduling callbacks.  All these return Handles.
     def call_soon(self, callback, *args):
-        print("call_soon", self, callback, args)
         h = events.Handle(callback, args)
         self._ready.append(h)
         if not self._will_dispatch:
@@ -545,9 +537,7 @@ class GLibEventLoop(BaseGLibEventLoop):
             # This may happen if .stop() was called in the dispatched
             # callbacks.
             if l.is_running():
-                print("enter run() %r" % l)
                 l.run()
-                print("leave run() %r" % l)
 
             if self._interrupted:
                 # ._interrupted is set when SIGINT is caught be the default
@@ -683,8 +673,6 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         else:
             l = events.DefaultEventLoopPolicy.new_event_loop(self._policy)
 
-        print("new event loop:", l)
-
         return l
 
     def get_default_loop(self):
@@ -709,14 +697,10 @@ class GtkEventLoopPolicy(GLibEventLoopPolicy):
 
 class wait_signal (futures.Future):
     def __init__(self, obj, name, *, loop=None):
-        try:
-            super().__init__(loop=loop)
-            self._obj = obj
-            #FIXME: use  a weakref ?
-            self._hnd = obj.connect(name, self._signal_callback)
-        except:
-            import traceback
-            traceback.print_exc()
+        super().__init__(loop=loop)
+        self._obj = obj
+        #FIXME: use  a weakref ?
+        self._hnd = obj.connect(name, self._signal_callback)
     
     def _signal_callback(self, *k):
         self._obj.disconnect(self._hnd)

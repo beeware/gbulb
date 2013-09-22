@@ -159,12 +159,10 @@ class SelectorEventLoop(selector_events.BaseSelectorEventLoop):
         return transp
 
     def _sig_chld_callback(self, pid, returncode):
-        print ("sigchld callback", pid, returncode)
         transp = self._subprocesses.get(pid)
         if transp is not None:
             transp._process_exited(returncode)
 
-#TODO: use GLib
     #FIXME: PEP 3156 says that only the main thread is allowed to handle
     # signals
     #   -> raise RuntimeError if this particular event loop instance cannot
