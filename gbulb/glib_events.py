@@ -529,27 +529,6 @@ class GLibEventLoop(BaseGLibEventLoop):
         self._mainloop    = None
         self._interrupted = False
 
-    def run_until_complete(self, future):
-        """Run the event loop until a Future is done.
-
-        Return the Future's result, or raise its exception.
-        """
-
-        def stop(f):
-            self.stop()
-
-        future = tasks.async(future, loop=self)
-        future.add_done_callback(stop)
-        try:
-            self.run_forever()
-        finally:
-            future.remove_done_callback(stop)
-
-        if not future.done():
-            raise RuntimeError('Event loop stopped before Future completed.')
-
-        return future.result()
-
     def run_forever(self):
         """Run the event loop until stop() is called."""
 
