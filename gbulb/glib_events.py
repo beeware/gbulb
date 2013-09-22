@@ -1,7 +1,7 @@
 # vim:sw=4:sts=4:nosta:et:
 """PEP 3156 event loop based on GLib"""
 
-from gi.repository import GLib, GObject, Gtk
+from gi.repository import GLib, GObject, Gtk, Gio
 
 from tulip import events
 from tulip import futures
@@ -600,6 +600,7 @@ class GtkEventLoop(BaseGLibEventLoop):
             self._running = False
 
     def stop(self):
+        # TODO: maybe remove the if
         if self._running:
             Gtk.main_quit()
 
@@ -607,6 +608,72 @@ class GtkEventLoop(BaseGLibEventLoop):
         """Return whether the event loop is currently running."""
         return self._running
 
+class GApplicationEventLoop(BaseGLibEventLoop):
+    """GApplication event loop
+
+    See the module documentation for more details
+    """
+
+    def __init__(self):
+        super().__init__(GLib.main_context_default())
+
+        self._running     = False
+        self._interrupted = False
+        self._application = None
+
+    def set_application (self, application):
+
+        if not isinstance (application, Gio.Application):
+            raise RuntimeError("application must be a Gio.Application object")
+        
+        if self._application is not None:
+            raise RuntimeError("application already set")
+
+        self._application = application
+
+    def run_forever(self, *, application=None):
+        """Run the event loop until stop() is called."""
+
+        if application is not None:
+            self.set_application(application)
+
+        if self._application is None:
+            raise RuntimeError("must give a Gio.Application object")
+
+        if self._running:
+            raise RuntimeError('Event loop is running.')
+
+        # We do not run the callbacks immediately. We need to call them
+        # when the Gtk loop is running, in case one callback calls .stop()
+        self._schedule_dispatch()
+
+        self._running = True
+        try:
+            self._application.run(None)
+
+            if self._interrupted:
+                # ._interrupted is set when SIGINT is caught be the default
+                # signal handler implemented in this module.
+                #
+                # If no user-defined handler is registered, then the default
+                # behaviour is just to raise KeyboardInterrupt
+                #
+                self._interrupted = False
+                raise KeyboardInterrupt()
+        finally:
+            self._running = False
+            # g_application objects cannot be run multiple times, so it is
+            # better to unset _application here
+            self._application = None
+
+    def stop(self):
+        # TODO: maybe remove the if
+        if self._running:
+            self._application.quit()
+
+    def is_running(self):
+        """Return whether the event loop is currently running."""
+        return self._running
 
 class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
     """Default GLib event loop policy
@@ -694,6 +761,13 @@ class GtkEventLoopPolicy(GLibEventLoopPolicy):
 
     def _new_default_loop(self):
         return GtkEventLoop()
+
+class GApplicationEventLoopPolicy(GLibEventLoopPolicy):
+    def __init__(self, *, full=False, threads=True):
+        super().__init__ (default=True, full=full, threads=threads)
+
+    def _new_default_loop(self):
+        return GApplicationEventLoop()
 
 class wait_signal (futures.Future):
     def __init__(self, obj, name, *, loop=None):
