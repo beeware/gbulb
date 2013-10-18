@@ -24,10 +24,11 @@ import time
 import os
 import sys
 
-from tulip import events
-from tulip import futures
-from tulip import tasks
-from tulip.log import tulip_log
+from asyncio import events
+from asyncio import futures
+from asyncio import tasks
+from asyncio.log import asyncio_log
+from asyncio.base_events import Server
 
 
 __all__ = ['BaseEventLoop']
@@ -45,6 +46,49 @@ _MAX_WORKERS = 5
 #    raise _StopError
 
 
+#class Server(events.AbstractServer):
+#
+#    def __init__(self, loop, sockets):
+#        self.loop = loop
+#        self.sockets = sockets
+#        self.active_count = 0
+#        self.waiters = []
+#
+#    def attach(self, transport):
+#        assert self.sockets is not None
+#        self.active_count += 1
+#
+#    def detach(self, transport):
+#        assert self.active_count > 0
+#        self.active_count -= 1
+#        if self.active_count == 0 and self.sockets is None:
+#            self._wakeup()
+#
+#    def close(self):
+#        sockets = self.sockets
+#        if sockets is not None:
+#            self.sockets = None
+#            for sock in sockets:
+#                self.loop._stop_serving(sock)
+#            if self.active_count == 0:
+#                self._wakeup()
+#
+#    def _wakeup(self):
+#        waiters = self.waiters
+#        self.waiters = None
+#        for waiter in waiters:
+#            if not waiter.done():
+#                waiter.set_result(waiter)
+#
+#    @tasks.coroutine
+#    def wait_closed(self):
+#        if self.sockets is None or self.waiters is None:
+#            return
+#        waiter = futures.Future(loop=self.loop)
+#        self.waiters.append(waiter)
+#        yield from waiter
+
+
 class BaseEventLoop(events.AbstractEventLoop):
 
     def __init__(self):
@@ -55,12 +99,13 @@ class BaseEventLoop(events.AbstractEventLoop):
         self._running = False
 
     def _make_socket_transport(self, sock, protocol, waiter=None, *,
-                               extra=None):
+                               extra=None, server=None):
         """Create socket transport."""
         raise NotImplementedError
 
     def _make_ssl_transport(self, rawsock, protocol, sslcontext, waiter, *,
-                            server_side=False, extra=None):
+                            server_side=False, server_hostname=None,
+                            extra=None, server=None):
         """Create SSL transport."""
         raise NotImplementedError
 
@@ -304,7 +349,8 @@ class BaseEventLoop(events.AbstractEventLoop):
         if ssl:
             sslcontext = None if isinstance(ssl, bool) else ssl
             transport = self._make_ssl_transport(
-                sock, protocol, sslcontext, waiter, server_side=False)
+                sock, protocol, sslcontext, waiter,
+                server_side=False, server_hostname=host)
         else:
             transport = self._make_socket_transport(sock, protocol, waiter)
 
@@ -354,7 +400,6 @@ class BaseEventLoop(events.AbstractEventLoop):
         for ((family, proto),
              (local_address, remote_address)) in addr_pairs_info:
             sock = None
-            l_addr = None
             r_addr = None
             try:
                 sock = socket.socket(
@@ -364,7 +409,6 @@ class BaseEventLoop(events.AbstractEventLoop):
 
                 if local_addr:
                     sock.bind(local_address)
-                    l_addr = sock.getsockname()
                 if remote_addr:
                     yield from self.sock_connect(sock, remote_address)
                     r_addr = remote_address
@@ -378,12 +422,11 @@ class BaseEventLoop(events.AbstractEventLoop):
             raise exceptions[0]
 
         protocol = protocol_factory()
-        transport = self._make_datagram_transport(
-            sock, protocol, r_addr, extra={'addr': l_addr})
+        transport = self._make_datagram_transport(sock, protocol, r_addr)
         return transport, protocol
 
     @tasks.coroutine
-    def start_serving(self, protocol_factory, host=None, port=None,
+    def create_server(self, protocol_factory, host=None, port=None,
                       *,
                       family=socket.AF_UNSPEC,
                       flags=socket.AI_PASSIVE,
@@ -443,18 +486,18 @@ class BaseEventLoop(events.AbstractEventLoop):
                     'host and port was not specified and no sock specified')
             sockets = [sock]
 
+        server = Server(self, sockets)
         for sock in sockets:
             sock.listen(backlog)
             sock.setblocking(False)
-            self._start_serving(protocol_factory, sock, ssl)
-        return sockets
+            self._start_serving(protocol_factory, sock, ssl, server)
+        return server
 
     @tasks.coroutine
     def connect_read_pipe(self, protocol_factory, pipe):
         protocol = protocol_factory()
         waiter = futures.Future(loop=self)
-        transport = self._make_read_pipe_transport(pipe, protocol, waiter,
-                                                   extra={})
+        transport = self._make_read_pipe_transport(pipe, protocol, waiter)
         yield from waiter
         return transport, protocol
 
@@ -462,8 +505,7 @@ class BaseEventLoop(events.AbstractEventLoop):
     def connect_write_pipe(self, protocol_factory, pipe):
         protocol = protocol_factory()
         waiter = futures.Future(loop=self)
-        transport = self._make_write_pipe_transport(pipe, protocol, waiter,
-                                                    extra={})
+        transport = self._make_write_pipe_transport(pipe, protocol, waiter)
         yield from waiter
         return transport, protocol
 
@@ -477,8 +519,7 @@ class BaseEventLoop(events.AbstractEventLoop):
         assert isinstance(cmd, str), cmd
         protocol = protocol_factory()
         transport = yield from self._make_subprocess_transport(
-            protocol, cmd, True, stdin, stdout, stderr, bufsize,
-            extra={}, **kwargs)
+            protocol, cmd, True, stdin, stdout, stderr, bufsize, **kwargs)
         return transport, protocol
 
     @tasks.coroutine
@@ -490,8 +531,7 @@ class BaseEventLoop(events.AbstractEventLoop):
         assert not shell, "shell must be False"
         protocol = protocol_factory()
         transport = yield from self._make_subprocess_transport(
-            protocol, args, False, stdin, stdout, stderr, bufsize,
-            extra={}, **kwargs)
+            protocol, args, False, stdin, stdout, stderr, bufsize, **kwargs)
         return transport, protocol
 
 #    def _add_callback(self, handle):
@@ -541,7 +581,7 @@ class BaseEventLoop(events.AbstractEventLoop):
 #            level = logging.INFO
 #        else:
 #            level = logging.DEBUG
-#        tulip_log.log(level, 'poll%s took %.3f seconds', argstr, t1-t0)
+#        asyncio_log.log(level, 'poll%s took %.3f seconds', argstr, t1-t0)
 #        self._process_events(event_list)
 #
 #        # Handle 'later' callbacks that are ready.

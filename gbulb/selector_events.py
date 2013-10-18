@@ -12,12 +12,12 @@ except ImportError:  # pragma: no cover
     ssl = None
 
 from . import base_events
-from tulip import constants
-from tulip import events
-from tulip import futures
-from tulip import selectors
-from tulip import transports
-from tulip.log import tulip_log
+from asyncio import constants
+from asyncio import events
+from asyncio import futures
+from asyncio import selectors
+from asyncio import transports
+from asyncio.log import asyncio_log
 
 
 class BaseSelectorEventLoop(base_events.BaseEventLoop):
@@ -31,18 +31,21 @@ class BaseSelectorEventLoop(base_events.BaseEventLoop):
 
 #        if selector is None:
 #            selector = selectors.DefaultSelector()
-#        tulip_log.debug('Using selector: %s', selector.__class__.__name__)
+#        asyncio_log.debug('Using selector: %s', selector.__class__.__name__)
 #        self._selector = selector
         self._make_self_pipe()
 
     def _make_socket_transport(self, sock, protocol, waiter=None, *,
-                               extra=None):
-        return _SelectorSocketTransport(self, sock, protocol, waiter, extra)
+                               extra=None, server=None):
+        return _SelectorSocketTransport(self, sock, protocol, waiter,
+                                        extra, server)
 
     def _make_ssl_transport(self, rawsock, protocol, sslcontext, waiter, *,
-                            server_side=False, extra=None):
+                            server_side=False, server_hostname=None,
+                            extra=None, server=None):
         return _SelectorSslTransport(
-            self, rawsock, protocol, sslcontext, waiter, server_side, extra)
+            self, rawsock, protocol, sslcontext, waiter,
+            server_side, server_hostname, extra, server)
 
     def _make_datagram_transport(self, sock, protocol,
                                  address=None, extra=None):
@@ -86,11 +89,12 @@ class BaseSelectorEventLoop(base_events.BaseEventLoop):
         except (BlockingIOError, InterruptedError):
             pass
 
-    def _start_serving(self, protocol_factory, sock, ssl=None):
+    def _start_serving(self, protocol_factory, sock, ssl=None, server=None):
         self.add_reader(sock.fileno(), self._accept_connection,
-                        protocol_factory, sock, ssl)
+                        protocol_factory, sock, ssl, server)
 
-    def _accept_connection(self, protocol_factory, sock, ssl=None):
+    def _accept_connection(self, protocol_factory, sock, ssl=None,
+                           server=None):
         try:
             conn, addr = sock.accept()
             conn.setblocking(False)
@@ -102,15 +106,16 @@ class BaseSelectorEventLoop(base_events.BaseEventLoop):
             sock.close()
             # There's nowhere to send the error, so just log it.
             # TODO: Someone will want an error handler for this.
-            tulip_log.exception('Accept failed')
+            asyncio_log.exception('Accept failed')
         else:
             if ssl:
                 self._make_ssl_transport(
                     conn, protocol_factory(), ssl, None,
-                    server_side=True, extra={'addr': addr})
+                    server_side=True, extra={'peername': addr}, server=server)
             else:
                 self._make_socket_transport(
-                    conn, protocol_factory(), extra={'addr': addr})
+                    conn, protocol_factory(), extra={'peername': addr},
+                    server=server)
         # It's now up to the protocol to handle the connection.
 
 #    def add_reader(self, fd, callback, *args):
@@ -316,24 +321,34 @@ class BaseSelectorEventLoop(base_events.BaseEventLoop):
 #                else:
 #                    self._add_callback(writer)
 
-    def stop_serving(self, sock):
+    def _stop_serving(self, sock):
         self.remove_reader(sock.fileno())
         sock.close()
 
 
 class _SelectorTransport(transports.Transport):
 
-    def __init__(self, loop, sock, protocol, extra):
+    max_size = 256 * 1024  # Buffer size passed to recv().
+
+    def __init__(self, loop, sock, protocol, extra, server=None):
         super().__init__(extra)
         self._extra['socket'] = sock
+        self._extra['sockname'] = sock.getsockname()
+        if 'peername' not in self._extra:
+            try:
+                self._extra['peername'] = sock.getpeername()
+            except socket.error:
+                self._extra['peername'] = None
         self._loop = loop
         self._sock = sock
         self._sock_fd = sock.fileno()
         self._protocol = protocol
-        self._buffer = []
+        self._server = server
+        self._buffer = collections.deque()
         self._conn_lost = 0
-        self._writing = True
         self._closing = False  # Set when close() called.
+        if server is not None:
+            server.attach(self)
 
     def abort(self):
         self._force_close(None)
@@ -349,7 +364,7 @@ class _SelectorTransport(transports.Transport):
 
     def _fatal_error(self, exc):
         # should be called from exception handler only
-        tulip_log.exception('Fatal error for %s', self)
+        asyncio_log.exception('Fatal error for %s', self)
         self._force_close(exc)
 
     def _force_close(self, exc):
@@ -373,21 +388,41 @@ class _SelectorTransport(transports.Transport):
             self._sock = None
             self._protocol = None
             self._loop = None
+            server = self._server
+            if server is not None:
+                server.detach(self)
+                self._server = None
 
 
 class _SelectorSocketTransport(_SelectorTransport):
 
-    def __init__(self, loop, sock, protocol, waiter=None, extra=None):
-        super().__init__(loop, sock, protocol, extra)
+    def __init__(self, loop, sock, protocol, waiter=None,
+                 extra=None, server=None):
+        super().__init__(loop, sock, protocol, extra, server)
+        self._eof = False
+        self._paused = False
 
         self._loop.add_reader(self._sock_fd, self._read_ready)
         self._loop.call_soon(self._protocol.connection_made, self)
         if waiter is not None:
             self._loop.call_soon(waiter.set_result, None)
 
+    def pause(self):
+        assert not self._closing, 'Cannot pause() when closing'
+        assert not self._paused, 'Already paused'
+        self._paused = True
+        self._loop.remove_reader(self._sock_fd)
+
+    def resume(self):
+        assert self._paused, 'Not paused'
+        self._paused = False
+        if self._closing:
+            return
+        self._loop.add_reader(self._sock_fd, self._read_ready)
+
     def _read_ready(self):
         try:
-            data = self._sock.recv(16*1024)
+            data = self._sock.recv(self.max_size)
         except (BlockingIOError, InterruptedError):
             pass
         except ConnectionResetError as exc:
@@ -398,44 +433,44 @@ class _SelectorSocketTransport(_SelectorTransport):
             if data:
                 self._protocol.data_received(data)
             else:
-                try:
-                    self._protocol.eof_received()
-                finally:
+                keep_open = self._protocol.eof_received()
+                if not keep_open:
                     self.close()
 
     def write(self, data):
-        assert isinstance(data, bytes), repr(data)
+        assert isinstance(data, bytes), repr(type(data))
+        assert not self._eof, 'Cannot call write() after write_eof()'
         if not data:
             return
 
         if self._conn_lost:
             if self._conn_lost >= constants.LOG_THRESHOLD_FOR_CONNLOST_WRITES:
-                tulip_log.warning('socket.send() raised exception.')
+                asyncio_log.warning('socket.send() raised exception.')
             self._conn_lost += 1
             return
 
-        if not self._buffer and self._writing:
+        if not self._buffer:
             # Attempt to send it right away first.
             try:
                 n = self._sock.send(data)
             except (BlockingIOError, InterruptedError):
                 n = 0
+            except (BrokenPipeError, ConnectionResetError) as exc:
+                self._force_close(exc)
+                return
             except OSError as exc:
                 self._fatal_error(exc)
                 return
-
-            if n == len(data):
-                return
-            elif n:
+            else:
                 data = data[n:]
+                if not data:
+                    return
+            # Start async I/O.
             self._loop.add_writer(self._sock_fd, self._write_ready)
 
         self._buffer.append(data)
 
     def _write_ready(self):
-        if not self._writing:
-            return  # transmission off
-
         data = b''.join(self._buffer)
         assert data, 'Data should not be empty'
 
@@ -444,56 +479,63 @@ class _SelectorSocketTransport(_SelectorTransport):
             n = self._sock.send(data)
         except (BlockingIOError, InterruptedError):
             self._buffer.append(data)
+        except (BrokenPipeError, ConnectionResetError) as exc:
+            self._loop.remove_writer(self._sock_fd)
+            self._force_close(exc)
         except Exception as exc:
             self._loop.remove_writer(self._sock_fd)
             self._fatal_error(exc)
         else:
-            if n == len(data):
+            data = data[n:]
+            if not data:
                 self._loop.remove_writer(self._sock_fd)
                 if self._closing:
                     self._call_connection_lost(None)
+                elif self._eof:
+                    self._sock.shutdown(socket.SHUT_WR)
                 return
-            elif n:
-                data = data[n:]
 
             self._buffer.append(data)  # Try again later.
 
-    def pause_writing(self):
-        if self._writing:
-            if self._buffer:
-                self._loop.remove_writer(self._sock_fd)
-            self._writing = False
+    def write_eof(self):
+        if self._eof:
+            return
+        self._eof = True
+        if not self._buffer:
+            self._sock.shutdown(socket.SHUT_WR)
 
-    def resume_writing(self):
-        if not self._writing:
-            if self._buffer:
-                self._loop.add_writer(self._sock_fd, self._write_ready)
-            self._writing = True
-
-    def discard_output(self):
-        if self._buffer:
-            self._loop.remove_writer(self._sock_fd)
-            self._buffer.clear()
+    def can_write_eof(self):
+        return True
 
 
 class _SelectorSslTransport(_SelectorTransport):
 
     def __init__(self, loop, rawsock, protocol, sslcontext, waiter=None,
-                 server_side=False, extra=None):
+                 server_side=False, server_hostname=None,
+                 extra=None, server=None):
         if server_side:
             assert isinstance(
                 sslcontext, ssl.SSLContext), 'Must pass an SSLContext'
         else:
             # Client-side may pass ssl=True to use a default context.
             sslcontext = sslcontext or ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-        sslsock = sslcontext.wrap_socket(rawsock, server_side=server_side,
-                                         do_handshake_on_connect=False)
+        wrap_kwargs = {
+            'server_side': server_side,
+            'do_handshake_on_connect': False,
+        }
+        if server_hostname is not None and not server_side and ssl.HAS_SNI:
+            wrap_kwargs['server_hostname'] = server_hostname
+        sslsock = sslcontext.wrap_socket(rawsock, **wrap_kwargs)
 
-        super().__init__(loop, sslsock, protocol, extra)
+        super().__init__(loop, sslsock, protocol, extra, server)
 
         self._waiter = waiter
         self._rawsock = rawsock
         self._sslcontext = sslcontext
+        self._paused = False
+
+        # SSL-specific extra info.  (peercert is set later)
+        self._extra.update(sslcontext=sslcontext)
 
         self._on_handshake()
 
@@ -516,6 +558,13 @@ class _SelectorSslTransport(_SelectorTransport):
             if self._waiter is not None:
                 self._waiter.set_exception(exc)
             raise
+
+        # Add extra info that becomes available after handshake.
+        self._extra.update(peercert=self._sock.getpeercert(),
+                           cipher=self._sock.cipher(),
+                           compression=self._sock.compression(),
+                           )
+
         self._loop.remove_reader(self._sock_fd)
         self._loop.remove_writer(self._sock_fd)
         self._loop.add_reader(self._sock_fd, self._on_ready)
@@ -524,6 +573,25 @@ class _SelectorSslTransport(_SelectorTransport):
         if self._waiter is not None:
             self._loop.call_soon(self._waiter.set_result, None)
 
+    def pause(self):
+        # XXX This is a bit icky, given the comment at the top of
+        # _on_ready().  Is it possible to evoke a deadlock?  I don't
+        # know, although it doesn't look like it; write() will still
+        # accept more data for the buffer and eventually the app will
+        # call resume() again, and things will flow again.
+
+        assert not self._closing, 'Cannot pause() when closing'
+        assert not self._paused, 'Already paused'
+        self._paused = True
+        self._loop.remove_reader(self._sock_fd)
+
+    def resume(self):
+        assert self._paused, 'Not paused'
+        self._paused = False
+        if self._closing:
+            return
+        self._loop.add_reader(self._sock_fd, self._on_ready)
+
     def _on_ready(self):
         # Because of renegotiations (?), there's no difference between
         # readable and writable.  We just try both.  XXX This may be
@@ -531,9 +599,9 @@ class _SelectorSslTransport(_SelectorTransport):
         # should do next.
 
         # First try reading.
-        if not self._closing:
+        if not self._closing and not self._paused:
             try:
-                data = self._sock.recv(8192)
+                data = self._sock.recv(self.max_size)
             except (BlockingIOError, InterruptedError,
                     ssl.SSLWantReadError, ssl.SSLWantWriteError):
                 pass
@@ -553,12 +621,16 @@ class _SelectorSslTransport(_SelectorTransport):
         # Now try writing, if there's anything to write.
         if self._buffer:
             data = b''.join(self._buffer)
-            self._buffer = []
+            self._buffer.clear()
             try:
                 n = self._sock.send(data)
             except (BlockingIOError, InterruptedError,
                     ssl.SSLWantReadError, ssl.SSLWantWriteError):
                 n = 0
+            except (BrokenPipeError, ConnectionResetError) as exc:
+                self._loop.remove_writer(self._sock_fd)
+                self._force_close(exc)
+                return
             except Exception as exc:
                 self._loop.remove_writer(self._sock_fd)
                 self._fatal_error(exc)
@@ -572,18 +644,21 @@ class _SelectorSslTransport(_SelectorTransport):
             self._call_connection_lost(None)
 
     def write(self, data):
-        assert isinstance(data, bytes), repr(data)
+        assert isinstance(data, bytes), repr(type(data))
         if not data:
             return
 
         if self._conn_lost:
             if self._conn_lost >= constants.LOG_THRESHOLD_FOR_CONNLOST_WRITES:
-                tulip_log.warning('socket.send() raised exception.')
+                asyncio_log.warning('socket.send() raised exception.')
             self._conn_lost += 1
             return
 
         self._buffer.append(data)
         # We could optimize, but the callback can do this for now.
+
+    def can_write_eof(self):
+        return False
 
     def close(self):
         if self._closing:
@@ -592,18 +667,13 @@ class _SelectorSslTransport(_SelectorTransport):
         self._conn_lost += 1
         self._loop.remove_reader(self._sock_fd)
 
-    # TODO: write_eof(), can_write_eof().
-
 
 class _SelectorDatagramTransport(_SelectorTransport):
-
-    max_size = 256 * 1024  # max bytes we read in one eventloop iteration
 
     def __init__(self, loop, sock, protocol, address=None, extra=None):
         super().__init__(loop, sock, protocol, extra)
 
         self._address = address
-        self._buffer = collections.deque()
         self._loop.add_reader(self._sock_fd, self._read_ready)
         self._loop.call_soon(self._protocol.connection_made, self)
 
@@ -618,7 +688,7 @@ class _SelectorDatagramTransport(_SelectorTransport):
             self._protocol.datagram_received(data, addr)
 
     def sendto(self, data, addr=None):
-        assert isinstance(data, bytes), repr(data)
+        assert isinstance(data, bytes), repr(type(data))
         if not data:
             return
 
@@ -627,7 +697,7 @@ class _SelectorDatagramTransport(_SelectorTransport):
 
         if self._conn_lost and self._address:
             if self._conn_lost >= constants.LOG_THRESHOLD_FOR_CONNLOST_WRITES:
-                tulip_log.warning('socket.send() raised exception.')
+                asyncio_log.warning('socket.send() raised exception.')
             self._conn_lost += 1
             return
 

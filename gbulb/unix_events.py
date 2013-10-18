@@ -12,13 +12,13 @@ import subprocess
 import sys
 
 
-from tulip import constants
-from tulip import events
-from tulip import protocols
+from asyncio import constants
+from asyncio import events
+from asyncio import protocols
 from .     import selector_events
-from tulip import tasks
-from tulip import transports
-from tulip.log import tulip_log
+from asyncio import tasks
+from asyncio import transports
+from asyncio.log import asyncio_log
 
 
 __all__ = ['SelectorEventLoop']
@@ -75,7 +75,7 @@ class SelectorEventLoop(selector_events.BaseSelectorEventLoop):
 #                try:
 #                    signal.set_wakeup_fd(-1)
 #                except ValueError as nexc:
-#                    tulip_log.info('set_wakeup_fd(-1) failed: %s', nexc)
+#                    asyncio_log.info('set_wakeup_fd(-1) failed: %s', nexc)
 #
 #            if exc.errno == errno.EINVAL:
 #                raise RuntimeError('sig {} cannot be caught'.format(sig))
@@ -120,7 +120,7 @@ class SelectorEventLoop(selector_events.BaseSelectorEventLoop):
 #            try:
 #                signal.set_wakeup_fd(-1)
 #            except ValueError as exc:
-#                tulip_log.info('set_wakeup_fd(-1) failed: %s', exc)
+#                asyncio_log.info('set_wakeup_fd(-1) failed: %s', exc)
 #
 #        return True
 
@@ -177,28 +177,25 @@ class SelectorEventLoop(selector_events.BaseSelectorEventLoop):
 #
 #    def _sig_chld(self):
 #        try:
-#            while True:
-#                try:
-#                    pid, status = os.waitpid(0, os.WNOHANG)
-#                except ChildProcessError:
-#                    break
-#                if pid == 0:
-#                    continue
-#                elif os.WIFSIGNALED(status):
-#                    returncode = -os.WTERMSIG(status)
-#                elif os.WIFEXITED(status):
-#                    returncode = os.WEXITSTATUS(status)
-#                else:
-#                    # covered by
-#                    # SelectorEventLoopTests.test__sig_chld_unknown_status
-#                    # from tests/unix_events_test.py
-#                    # bug in coverage.py version 3.6 ???
-#                    continue  # pragma: no cover
-#                transp = self._subprocesses.get(pid)
-#                if transp is not None:
-#                    transp._process_exited(returncode)
+#            try:
+#                pid, status = os.waitpid(0, os.WNOHANG)
+#            except ChildProcessError:
+#                return
+#            if pid == 0:
+#                self.call_soon(self._sig_chld)
+#                return
+#            elif os.WIFSIGNALED(status):
+#                returncode = -os.WTERMSIG(status)
+#            elif os.WIFEXITED(status):
+#                returncode = os.WEXITSTATUS(status)
+#            else:
+#                self.call_soon(self._sig_chld)
+#                return
+#            transp = self._subprocesses.get(pid)
+#            if transp is not None:
+#                transp._process_exited(returncode)
 #        except Exception:
-#            tulip_log.exception('Unknown exception in SIGCHLD handler')
+#            asyncio_log.exception('Unknown exception in SIGCHLD handler')
 
     def _subprocess_closed(self, transport):
         pid = transport.get_pid()
@@ -258,7 +255,7 @@ class _UnixReadPipeTransport(transports.ReadTransport):
 
     def _fatal_error(self, exc):
         # should be called by exception handler only
-        tulip_log.exception('Fatal error for %s', self)
+        asyncio_log.exception('Fatal error for %s', self)
         self._close(exc)
 
     def _close(self, exc):
@@ -291,7 +288,6 @@ class _UnixWritePipeTransport(transports.WriteTransport):
         self._buffer = []
         self._conn_lost = 0
         self._closing = False  # Set when close() or write_eof() called.
-        self._writing = True
         self._loop.add_reader(self._fileno, self._read_ready)
 
         self._loop.call_soon(self._protocol.connection_made, self)
@@ -311,11 +307,11 @@ class _UnixWritePipeTransport(transports.WriteTransport):
 
         if self._conn_lost:
             if self._conn_lost >= constants.LOG_THRESHOLD_FOR_CONNLOST_WRITES:
-                tulip_log.warning('os.write(pipe, data) raised exception.')
+                asyncio_log.warning('os.write(pipe, data) raised exception.')
             self._conn_lost += 1
             return
 
-        if not self._buffer and self._writing:
+        if not self._buffer:
             # Attempt to send it right away first.
             try:
                 n = os.write(self._fileno, data)
@@ -334,9 +330,6 @@ class _UnixWritePipeTransport(transports.WriteTransport):
         self._buffer.append(data)
 
     def _write_ready(self):
-        if not self._writing:
-            return
-
         data = b''.join(self._buffer)
         assert data, 'Data should not be empty'
 
@@ -384,7 +377,7 @@ class _UnixWritePipeTransport(transports.WriteTransport):
 
     def _fatal_error(self, exc):
         # should be called by exception handler only
-        tulip_log.exception('Fatal error for %s', self)
+        asyncio_log.exception('Fatal error for %s', self)
         self._close(exc)
 
     def _close(self, exc=None):
@@ -403,23 +396,6 @@ class _UnixWritePipeTransport(transports.WriteTransport):
             self._pipe = None
             self._protocol = None
             self._loop = None
-
-    def pause_writing(self):
-        if self._writing:
-            if self._buffer:
-                self._loop.remove_writer(self._fileno)
-            self._writing = False
-
-    def resume_writing(self):
-        if not self._writing:
-            if self._buffer:
-                self._loop.add_writer(self._fileno, self._write_ready)
-            self._writing = True
-
-    def discard_output(self):
-        if self._buffer:
-            self._loop.remove_writer(self._fileno)
-            self._buffer.clear()
 
 
 class _UnixWriteSubprocessPipeProto(protocols.BaseProtocol):
