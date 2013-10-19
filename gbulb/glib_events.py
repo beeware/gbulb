@@ -3,10 +3,10 @@
 
 from gi.repository import GLib, GObject, Gtk
 
-from tulip import events
-from tulip import futures
-from tulip import tasks
-from tulip.log import tulip_log
+from asyncio import events
+from asyncio import futures
+from asyncio import tasks
+from asyncio.log import asyncio_log
 
 from . import unix_events
 
@@ -120,7 +120,7 @@ class GLibChildHandle(events.Handle):
 #    block until the context is released by the other thread.
 #
 #  - .stop() is relevant only when the currently running Glib.MainLoop object
-#    was created by this tulip object (i.e. by calling .run_forever() or
+#    was created by this asyncio object (i.e. by calling .run_forever() or
 #    .run_until_complete()). The event loop will quit only when it regains
 #    control of the context. This can happen in two cases:
 #     1. when multiple event loop are enclosed (by creating new MainLoop
@@ -160,7 +160,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
             if self._loop:
                 l = self._loop()
                 if l and l != loop:
-                    tulip_log.warning(
+                    asyncio_log.warning(
                         "Multiple event loops for the GLib default context. "
                         "SIGINT may not be caught reliably")
 
@@ -661,7 +661,7 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         full        Full GLib (default: False)
 
             By default the policy is to create a GLibEventLoop object only for
-            the main thread. Other threads will use regular tulip event loops.
+            the main thread. Other threads will use regular asyncio event loops.
             If this flag is set, then this policy will use a glib event loop
             for every thread. Use this parameter if you want your loops to
             interact with modules written in other languages.
@@ -686,10 +686,10 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         BaseGLibEventLoop.init_class()
 
         if threads:
-            tulip_log.info("GLib threads enabled")
+            asyncio_log.info("GLib threads enabled")
             GObject.threads_init()
         else:
-            tulip_log.info("GLib threads not used")
+            asyncio_log.info("GLib threads not used")
 
             def __new__(cls, *k, **kw):
                 raise RuntimeError("GLib threads not enabled (you should use %s(threads=True)" % self.__class__.__name__)
@@ -750,5 +750,5 @@ class wait_signal (futures.Future):
             self._obj = None
 
 def get_default_loop(self):
-    return tulip.get_event_loop_policy().get_default_loop()
+    return asyncio.get_event_loop_policy().get_default_loop()
 

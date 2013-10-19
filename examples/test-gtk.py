@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from gi.repository import Gtk, GObject
-import tulip
-import tulip.tasks
+import asyncio
 import gbulb
 
 class ProgressBarWindow(Gtk.Window):
@@ -46,7 +45,7 @@ class ProgressBarWindow(Gtk.Window):
                 self.progressbar.set_text ("blah blah!")
                 self.progressbar.set_fraction(0.50)
 
-                r = yield from tulip.sleep(1)
+                r = yield from asyncio.sleep(1)
 
                 self.progressbar.set_fraction(0.75)
                 self.progressbar.set_text ("pouet pouet!")
@@ -56,7 +55,7 @@ class ProgressBarWindow(Gtk.Window):
                 self.progressbar.set_fraction(1.0)
                 self.progressbar.set_text ("done!")
 
-                yield from tulip.sleep(1)
+                yield from asyncio.sleep(1)
 
             finally:
                 self.progressbar.set_fraction(0.0)
@@ -67,19 +66,19 @@ class ProgressBarWindow(Gtk.Window):
             self.progressbar.set_fraction(0.25)
             self.progressbar.set_text ("do some magic!")
             self.progressbar.set_show_text (True)
-            self._running = tulip.async(coro())
+            self._running = asyncio.async(coro())
     
     def on_stop(self, button):
         if self._running:
             self._running.cancel()
 
             
-tulip.set_event_loop_policy(gbulb.GtkEventLoopPolicy())
+asyncio.set_event_loop_policy(gbulb.GtkEventLoopPolicy())
 
 win = ProgressBarWindow()
 win.connect("delete-event", Gtk.main_quit)
 win.show_all()
 
-tulip.get_event_loop().run_forever()
+asyncio.get_event_loop().run_forever()
 
 

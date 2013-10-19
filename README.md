@@ -26,13 +26,13 @@ Apache 2.0
 
 ### GLib event loop
 
-        import tulip, gbulb
-        tulip.set_event_loop_policy(gbulb.GLibEventLoopPolicy())
+        import asyncio, gbulb
+        asyncio.set_event_loop_policy(gbulb.GLibEventLoopPolicy())
 
 ### Gtk+ event loop *(suitable for GTK+ applications)*
 
-        import tulip, gbulb
-        tulip.set_event_loop_policy(gbulb.GtkEventLoopPolicy())
+        import asyncio, gbulb
+        asyncio.set_event_loop_policy(gbulb.GtkEventLoopPolicy())
 
 ## Known issues
 
@@ -67,7 +67,7 @@ divergences with PEP 3156:
    block until the context is released by the other thread.
 
  - .stop() is relevant only when the currently running Glib.MainLoop object
-   was created by this tulip object (i.e. by calling .run_forever() or
+   was created by this asyncio object (i.e. by calling .run_forever() or
    .run_until_complete()). The event loop will quit only when it regains
    control of the context. This can happen in two cases:
     1. when multiple event loop are enclosed (by creating new MainLoop
