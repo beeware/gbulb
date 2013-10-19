@@ -1,7 +1,7 @@
 # vim:sw=4:sts=4:nosta:et:
 """PEP 3156 event loop based on GLib"""
 
-from gi.repository import GLib, GObject, Gtk
+from gi.repository import GLib, GObject, Gtk, Gio
 
 from asyncio import events
 from asyncio import futures
@@ -68,13 +68,10 @@ class GLibChildHandle(events.Handle):
 
     @staticmethod
     def _callback(pid, status, self):
-        print("Child callback", pid, status, self)
 
         if os.WIFSIGNALED(status):
-            print("signaled!")
             returncode = -os.WTERMSIG(status)
         elif os.WIFEXITED(status):
-            print("exited!")
             returncode = os.WEXITSTATUS(status)
 
             #FIXME: Hack for adjusting invalid status returned by GLIB
@@ -83,7 +80,6 @@ class GLibChildHandle(events.Handle):
                 returncode = 128 - returncode
         else:
             returncode = None
-        print("-> returncode", returncode)
 
         self._args += returncode,
 
@@ -210,7 +206,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
             self._default_sigint_handler.attach(self)
 
     def _dispatch(self):
-#		print("dispatch enter", self._ready)
         # This is the only place where callbacks are actually *called*. All
         # other places just add them to ready. Note: We run all currently
         # scheduled callbacks, but not any callbacks scheduled by callbacks run
@@ -223,7 +218,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         for i in range(ntodo):
             handle = self._ready.popleft()
             if not handle._cancelled:
-                print ("dispatch", handle)
                 handle._run()
 
         self._schedule_dispatch()
@@ -246,7 +240,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         self._wakeup.set_callback(wakeup_cb, self)
         self._wakeup.attach(self._context)
 
-#		print("dispatch leave", self._ready)
 
     def run_until_complete(self, future):
         """Run the event loop until a Future is done.
@@ -287,7 +280,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
 
     # Methods scheduling callbacks.  All these return Handles.
     def call_soon(self, callback, *args):
-        print("call_soon", self, callback, args)
         h = events.Handle(callback, args)
         self._ready.append(h)
         if not self._will_dispatch:
@@ -529,27 +521,6 @@ class GLibEventLoop(BaseGLibEventLoop):
         self._mainloop    = None
         self._interrupted = False
 
-    def run_until_complete(self, future):
-        """Run the event loop until a Future is done.
-
-        Return the Future's result, or raise its exception.
-        """
-
-        def stop(f):
-            self.stop()
-
-        future = tasks.async(future, loop=self)
-        future.add_done_callback(stop)
-        try:
-            self.run_forever()
-        finally:
-            future.remove_done_callback(stop)
-
-        if not future.done():
-            raise RuntimeError('Event loop stopped before Future completed.')
-
-        return future.result()
-
     def run_forever(self):
         """Run the event loop until stop() is called."""
 
@@ -566,9 +537,7 @@ class GLibEventLoop(BaseGLibEventLoop):
             # This may happen if .stop() was called in the dispatched
             # callbacks.
             if l.is_running():
-                print("enter run() %r" % l)
                 l.run()
-                print("leave run() %r" % l)
 
             if self._interrupted:
                 # ._interrupted is set when SIGINT is caught be the default
@@ -631,6 +600,7 @@ class GtkEventLoop(BaseGLibEventLoop):
             self._running = False
 
     def stop(self):
+        # TODO: maybe remove the if
         if self._running:
             Gtk.main_quit()
 
@@ -638,6 +608,72 @@ class GtkEventLoop(BaseGLibEventLoop):
         """Return whether the event loop is currently running."""
         return self._running
 
+class GApplicationEventLoop(BaseGLibEventLoop):
+    """GApplication event loop
+
+    See the module documentation for more details
+    """
+
+    def __init__(self):
+        super().__init__(GLib.main_context_default())
+
+        self._running     = False
+        self._interrupted = False
+        self._application = None
+
+    def set_application (self, application):
+
+        if not isinstance (application, Gio.Application):
+            raise RuntimeError("application must be a Gio.Application object")
+        
+        if self._application is not None:
+            raise RuntimeError("application already set")
+
+        self._application = application
+
+    def run_forever(self, *, application=None):
+        """Run the event loop until stop() is called."""
+
+        if application is not None:
+            self.set_application(application)
+
+        if self._application is None:
+            raise RuntimeError("must give a Gio.Application object")
+
+        if self._running:
+            raise RuntimeError('Event loop is running.')
+
+        # We do not run the callbacks immediately. We need to call them
+        # when the Gtk loop is running, in case one callback calls .stop()
+        self._schedule_dispatch()
+
+        self._running = True
+        try:
+            self._application.run(None)
+
+            if self._interrupted:
+                # ._interrupted is set when SIGINT is caught be the default
+                # signal handler implemented in this module.
+                #
+                # If no user-defined handler is registered, then the default
+                # behaviour is just to raise KeyboardInterrupt
+                #
+                self._interrupted = False
+                raise KeyboardInterrupt()
+        finally:
+            self._running = False
+            # g_application objects cannot be run multiple times, so it is
+            # better to unset _application here
+            self._application = None
+
+    def stop(self):
+        # TODO: maybe remove the if
+        if self._running:
+            self._application.quit()
+
+    def is_running(self):
+        """Return whether the event loop is currently running."""
+        return self._running
 
 class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
     """Default GLib event loop policy
@@ -704,8 +740,6 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         else:
             l = events.DefaultEventLoopPolicy.new_event_loop(self._policy)
 
-        print("new event loop:", l)
-
         return l
 
     def get_default_loop(self):
@@ -728,16 +762,19 @@ class GtkEventLoopPolicy(GLibEventLoopPolicy):
     def _new_default_loop(self):
         return GtkEventLoop()
 
+class GApplicationEventLoopPolicy(GLibEventLoopPolicy):
+    def __init__(self, *, full=False, threads=True):
+        super().__init__ (default=True, full=full, threads=threads)
+
+    def _new_default_loop(self):
+        return GApplicationEventLoop()
+
 class wait_signal (futures.Future):
     def __init__(self, obj, name, *, loop=None):
-        try:
-            super().__init__(loop=loop)
-            self._obj = obj
-            #FIXME: use  a weakref ?
-            self._hnd = obj.connect(name, self._signal_callback)
-        except:
-            import traceback
-            traceback.print_exc()
+        super().__init__(loop=loop)
+        self._obj = obj
+        #FIXME: use  a weakref ?
+        self._hnd = obj.connect(name, self._signal_callback)
     
     def _signal_callback(self, *k):
         self._obj.disconnect(self._hnd)
