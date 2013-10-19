@@ -4,10 +4,18 @@ import sys
 import test.support
 import unittest
 import unittest.mock
+
+if sys.platform != 'win32':
+    raise unittest.SkipTest('Windows only')
+
 import _winapi
 
 from asyncio import windows_utils
-from asyncio import _overlapped
+
+try:
+    import _overlapped
+except ImportError:
+    from asyncio import _overlapped
 
 
 class WinsocketpairTests(unittest.TestCase):
