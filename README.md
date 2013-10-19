@@ -15,9 +15,13 @@ Anthony Baire
 
 Apache 2.0
 
+## Homepage
+
+[https://bitbucket.org/a_ba/gbulb](https://bitbucket.org/a_ba/gbulb)
+
 ## Requirements
 - python3.3
-- tulip
+- tulip (asyncio branch)
 - glib 
 - gtk+3
 - pygobject
@@ -34,10 +38,20 @@ Apache 2.0
         import asyncio, gbulb
         asyncio.set_event_loop_policy(gbulb.GtkEventLoopPolicy())
 
+### GApplication/GtkApplication event loop
+
+        import asyncio, gbulb
+        asyncio.set_event_loop_policy(gbulb.GApplicationEventLoopPolicy())
+
+        loop = asyncio.get_event_loop()
+        loop.run_forever(application = my_gapplication_object)
+
 ## Known issues
 
 - subprocesses can only be started from the default context (usually the one
   used by the main thread)
+
+- windows is not supported, sorry
 
 ## Divergences with PEP 3156
 
