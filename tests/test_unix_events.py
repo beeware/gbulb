@@ -7,16 +7,15 @@ import pprint
 import signal
 import stat
 import sys
-import tempfile
 import unittest
 import unittest.mock
 
 
-from tulip import events
-from tulip import futures
-from tulip import protocols
-from tulip import test_utils
-from tulip import unix_events
+from asyncio import events
+from asyncio import futures
+from asyncio import protocols
+from asyncio import test_utils
+from asyncio import unix_events
 
 import gbulb
 from gi.repository import GLib
@@ -55,7 +54,7 @@ class SelectorEventLoopTests(unittest.TestCase):
         self.loop.remove_signal_handler.assert_called_with(signal.NSIG + 1)
 
     @unittest.skip
-    @unittest.mock.patch('tulip.unix_events.signal')
+    @unittest.mock.patch('asyncio.unix_events.signal')
     def test_add_signal_handler_setup_error(self, m_signal):
         m_signal.NSIG = signal.NSIG
         m_signal.set_wakeup_fd.side_effect = ValueError
@@ -65,7 +64,7 @@ class SelectorEventLoopTests(unittest.TestCase):
             self.loop.add_signal_handler,
             signal.SIGINT, lambda: True)
 
-    @unittest.mock.patch('tulip.unix_events.signal')
+    @unittest.mock.patch('asyncio.unix_events.signal')
     def test_add_signal_handler(self, m_signal):
         m_signal.NSIG = signal.NSIG
 
@@ -76,7 +75,7 @@ class SelectorEventLoopTests(unittest.TestCase):
         self.assertEqual(h._callback, cb)
 
     @unittest.skip
-    @unittest.mock.patch('tulip.unix_events.signal')
+    @unittest.mock.patch('asyncio.unix_events.signal')
     def test_add_signal_handler_install_error(self, m_signal):
         m_signal.NSIG = signal.NSIG
 
@@ -95,8 +94,8 @@ class SelectorEventLoopTests(unittest.TestCase):
             signal.SIGINT, lambda: True)
 
     @unittest.skip
-    @unittest.mock.patch('tulip.unix_events.signal')
-    @unittest.mock.patch('tulip.unix_events.tulip_log')
+    @unittest.mock.patch('asyncio.unix_events.signal')
+    @unittest.mock.patch('asyncio.unix_events.asyncio_log')
     def test_add_signal_handler_install_error2(self, m_logging, m_signal):
         m_signal.NSIG = signal.NSIG
 
@@ -113,8 +112,8 @@ class SelectorEventLoopTests(unittest.TestCase):
         self.assertEqual(1, m_signal.set_wakeup_fd.call_count)
 
     @unittest.skip
-    @unittest.mock.patch('tulip.unix_events.signal')
-    @unittest.mock.patch('tulip.unix_events.tulip_log')
+    @unittest.mock.patch('asyncio.unix_events.signal')
+    @unittest.mock.patch('asyncio.unix_events.asyncio_log')
     def test_add_signal_handler_install_error3(self, m_logging, m_signal):
         class Err(OSError):
             errno = errno.EINVAL
@@ -129,7 +128,7 @@ class SelectorEventLoopTests(unittest.TestCase):
         self.assertEqual(2, m_signal.set_wakeup_fd.call_count)
 
     @unittest.skip
-    @unittest.mock.patch('tulip.unix_events.signal')
+    @unittest.mock.patch('asyncio.unix_events.signal')
     def test_remove_signal_handler(self, m_signal):
         m_signal.NSIG = signal.NSIG
 
@@ -143,7 +142,7 @@ class SelectorEventLoopTests(unittest.TestCase):
             (signal.SIGHUP, m_signal.SIG_DFL), m_signal.signal.call_args[0])
 
     @unittest.skip
-    @unittest.mock.patch('tulip.unix_events.signal')
+    @unittest.mock.patch('asyncio.unix_events.signal')
     def test_remove_signal_handler_2(self, m_signal):
         m_signal.NSIG = signal.NSIG
         m_signal.SIGINT = signal.SIGINT
@@ -160,8 +159,8 @@ class SelectorEventLoopTests(unittest.TestCase):
             (signal.SIGINT, m_signal.default_int_handler),
             m_signal.signal.call_args[0])
 
-    @unittest.mock.patch('tulip.unix_events.signal')
-    @unittest.mock.patch('tulip.unix_events.tulip_log')
+    @unittest.mock.patch('asyncio.unix_events.signal')
+    @unittest.mock.patch('asyncio.unix_events.asyncio_log')
     def test_remove_signal_handler_cleanup_error(self, m_logging, m_signal):
         m_signal.NSIG = signal.NSIG
         self.loop.add_signal_handler(signal.SIGHUP, lambda: True)
@@ -172,7 +171,7 @@ class SelectorEventLoopTests(unittest.TestCase):
         self.assertTrue(m_logging.info)
 
     @unittest.skip
-    @unittest.mock.patch('tulip.unix_events.signal')
+    @unittest.mock.patch('asyncio.unix_events.signal')
     def test_remove_signal_handler_error(self, m_signal):
         m_signal.NSIG = signal.NSIG
         self.loop.add_signal_handler(signal.SIGHUP, lambda: True)
@@ -183,7 +182,7 @@ class SelectorEventLoopTests(unittest.TestCase):
             OSError, self.loop.remove_signal_handler, signal.SIGHUP)
 
     @unittest.skip
-    @unittest.mock.patch('tulip.unix_events.signal')
+    @unittest.mock.patch('asyncio.unix_events.signal')
     def test_remove_signal_handler_error2(self, m_signal):
         m_signal.NSIG = signal.NSIG
         self.loop.add_signal_handler(signal.SIGHUP, lambda: True)
@@ -290,7 +289,7 @@ class SelectorEventLoopTests(unittest.TestCase):
         self.assertFalse(m_WTERMSIG.called)
 
     @unittest.skip
-    @unittest.mock.patch('tulip.unix_events.tulip_log')
+    @unittest.mock.patch('asyncio.unix_events.asyncio_log')
     @unittest.mock.patch('os.WTERMSIG')
     @unittest.mock.patch('os.WEXITSTATUS')
     @unittest.mock.patch('os.WIFSIGNALED')
@@ -312,6 +311,12 @@ class SelectorEventLoopTests(unittest.TestCase):
         self.assertFalse(m_WEXITSTATUS.called)
         m_log.exception.assert_called_with(
             'Unknown exception in SIGCHLD handler')
+
+    @unittest.mock.patch('os.waitpid')
+    def test__sig_chld_process_error(self, m_waitpid):
+        m_waitpid.side_effect = ChildProcessError
+        self.loop._sig_chld()
+        self.assertTrue(m_waitpid.called)
 
 
 class UnixReadPipeTransportTests(unittest.TestCase):
@@ -374,7 +379,7 @@ class UnixReadPipeTransportTests(unittest.TestCase):
         test_utils.run_briefly(self.loop)
         self.assertFalse(self.protocol.data_received.called)
 
-    @unittest.mock.patch('tulip.log.tulip_log.exception')
+    @unittest.mock.patch('asyncio.log.asyncio_log.exception')
     @unittest.mock.patch('os.read')
     def test__read_ready_error(self, m_read, m_logexc):
         tr = unix_events._UnixReadPipeTransport(
@@ -564,7 +569,7 @@ class UnixWritePipeTransportTests(unittest.TestCase):
         self.loop.assert_writer(5, tr._write_ready)
         self.assertEqual([b'data'], tr._buffer)
 
-    @unittest.mock.patch('tulip.unix_events.tulip_log')
+    @unittest.mock.patch('asyncio.unix_events.asyncio_log')
     @unittest.mock.patch('os.write')
     def test_write_err(self, m_write, m_log):
         tr = unix_events._UnixWritePipeTransport(
@@ -650,7 +655,7 @@ class UnixWritePipeTransportTests(unittest.TestCase):
         self.loop.assert_writer(5, tr._write_ready)
         self.assertEqual([b'data'], tr._buffer)
 
-    @unittest.mock.patch('tulip.log.tulip_log.exception')
+    @unittest.mock.patch('asyncio.log.asyncio_log.exception')
     @unittest.mock.patch('os.write')
     def test__write_ready_err(self, m_write, m_logexc):
         tr = unix_events._UnixWritePipeTransport(
@@ -669,7 +674,6 @@ class UnixWritePipeTransportTests(unittest.TestCase):
         self.assertEqual(1, tr._conn_lost)
         test_utils.run_briefly(self.loop)
         self.protocol.connection_lost.assert_called_with(err)
-
 
     @unittest.mock.patch('os.write')
     def test__write_ready_closing(self, m_write):
@@ -771,73 +775,6 @@ class UnixWritePipeTransportTests(unittest.TestCase):
         tr.write_eof()
         self.assertTrue(tr._closing)
         self.assertFalse(self.protocol.connection_lost.called)
-
-    def test_pause_resume_writing(self):
-        tr = unix_events._UnixWritePipeTransport(
-            self.loop, self.pipe, self.protocol)
-        tr.pause_writing()
-        self.assertFalse(tr._writing)
-        tr.resume_writing()
-        self.assertTrue(tr._writing)
-
-    def test_double_pause_resume_writing(self):
-        tr = unix_events._UnixWritePipeTransport(
-            self.loop, self.pipe, self.protocol)
-        tr.pause_writing()
-        self.assertFalse(tr._writing)
-        tr.pause_writing()
-        self.assertFalse(tr._writing)
-        tr.resume_writing()
-        self.assertTrue(tr._writing)
-        tr.resume_writing()
-        self.assertTrue(tr._writing)
-
-    def test_pause_resume_writing_with_nonempty_buffer(self):
-        tr = unix_events._UnixWritePipeTransport(
-            self.loop, self.pipe, self.protocol)
-        self.loop.add_writer(5, tr._write_ready)
-        tr._buffer = [b'da', b'ta']
-        tr.pause_writing()
-        self.assertFalse(tr._writing)
-        self.assertFalse(self.loop.writers)
-        self.assertEqual([b'da', b'ta'], tr._buffer)
-
-        tr.resume_writing()
-        self.assertTrue(tr._writing)
-        self.loop.assert_writer(5, tr._write_ready)
-        self.assertEqual([b'da', b'ta'], tr._buffer)
-
-    @unittest.mock.patch('os.write')
-    def test__write_ready_on_pause(self, m_write):
-        tr = unix_events._UnixWritePipeTransport(
-            self.loop, self.pipe, self.protocol)
-        self.loop.add_writer(5, tr._write_ready)
-        tr._buffer = [b'da', b'ta']
-        tr.pause_writing()
-
-        tr._write_ready()
-        self.assertFalse(m_write.called)
-        self.assertFalse(self.loop.writers)
-        self.assertEqual([b'da', b'ta'], tr._buffer)
-        self.assertFalse(tr._writing)
-
-    def test_discard_output(self):
-        tr = unix_events._UnixWritePipeTransport(
-            self.loop, self.pipe, self.protocol)
-        tr._buffer = [b'da', b'ta']
-        self.loop.add_writer(5, tr._write_ready)
-        tr.discard_output()
-        self.assertTrue(tr._writing)
-        self.assertFalse(self.loop.writers)
-        self.assertEqual([], tr._buffer)
-
-    def test_discard_output_without_pending_writes(self):
-        tr = unix_events._UnixWritePipeTransport(
-            self.loop, self.pipe, self.protocol)
-        tr.discard_output()
-        self.assertTrue(tr._writing)
-        self.assertFalse(self.loop.writers)
-        self.assertEqual([], tr._buffer)
 
 if __name__ == '__main__':
     unittest.main()

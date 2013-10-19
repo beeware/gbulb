@@ -5,10 +5,10 @@ import ssl
 import unittest
 import unittest.mock
 
-from tulip import events
-from tulip import streams
-from tulip import tasks
-from tulip import test_utils
+from asyncio import events
+from asyncio import streams
+from asyncio import tasks
+from asyncio import test_utils
 
 
 class StreamReaderTests(unittest.TestCase):
@@ -26,13 +26,13 @@ class StreamReaderTests(unittest.TestCase):
         self.loop.close()
         gc.collect()
 
-    @unittest.mock.patch('tulip.streams.events')
+    @unittest.mock.patch('asyncio.streams.events')
     def test_ctor_global_loop(self, m_events):
         stream = streams.StreamReader()
         self.assertIs(stream.loop, m_events.get_event_loop.return_value)
 
     def test_open_connection(self):
-        with test_utils.run_test_server(self.loop) as httpd:
+        with test_utils.run_test_server() as httpd:
             f = streams.open_connection(*httpd.address, loop=self.loop)
             reader, writer = self.loop.run_until_complete(f)
             writer.write(b'GET / HTTP/1.0\r\n\r\n')
@@ -47,7 +47,7 @@ class StreamReaderTests(unittest.TestCase):
 
     @unittest.skipIf(ssl is None, 'No ssl module')
     def test_open_connection_no_loop_ssl(self):
-        with test_utils.run_test_server(self.loop, use_ssl=True) as httpd:
+        with test_utils.run_test_server(use_ssl=True) as httpd:
             try:
                 events.set_event_loop(self.loop)
                 f = streams.open_connection(*httpd.address, ssl=True)
@@ -62,7 +62,7 @@ class StreamReaderTests(unittest.TestCase):
             writer.close()
 
     def test_open_connection_error(self):
-        with test_utils.run_test_server(self.loop) as httpd:
+        with test_utils.run_test_server() as httpd:
             f = streams.open_connection(*httpd.address, loop=self.loop)
             reader, writer = self.loop.run_until_complete(f)
             writer._protocol.connection_lost(ZeroDivisionError())
@@ -71,6 +71,7 @@ class StreamReaderTests(unittest.TestCase):
                 self.loop.run_until_complete(f)
 
             writer.close()
+            test_utils.run_briefly(self.loop)
 
     def test_feed_empty_data(self):
         stream = streams.StreamReader(loop=self.loop)
@@ -337,6 +338,22 @@ class StreamReaderTests(unittest.TestCase):
         self.loop.run_until_complete(tasks.wait([t1, t2], loop=self.loop))
 
         self.assertRaises(ValueError, t1.result)
+
+    def test_exception_cancel(self):
+        stream = streams.StreamReader(loop=self.loop)
+
+        @tasks.coroutine
+        def read_a_line():
+            yield from stream.readline()
+
+        t = tasks.Task(read_a_line(), loop=self.loop)
+        test_utils.run_briefly(self.loop)
+        t.cancel()
+        test_utils.run_briefly(self.loop)
+        # The following line fails if set_exception() isn't careful.
+        stream.set_exception(RuntimeError('message'))
+        test_utils.run_briefly(self.loop)
+        self.assertIs(stream.waiter, None)
 
 
 if __name__ == '__main__':
