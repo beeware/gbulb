@@ -6,7 +6,7 @@ from gi.repository import GLib, GObject, Gtk
 from asyncio import events
 from asyncio import futures
 from asyncio import tasks
-from asyncio.log import asyncio_log
+from asyncio.log import logger
 
 from . import unix_events
 
@@ -160,7 +160,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
             if self._loop:
                 l = self._loop()
                 if l and l != loop:
-                    asyncio_log.warning(
+                    logger.warning(
                         "Multiple event loops for the GLib default context. "
                         "SIGINT may not be caught reliably")
 
@@ -686,10 +686,10 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         BaseGLibEventLoop.init_class()
 
         if threads:
-            asyncio_log.info("GLib threads enabled")
+            logger.info("GLib threads enabled")
             GObject.threads_init()
         else:
-            asyncio_log.info("GLib threads not used")
+            logger.info("GLib threads not used")
 
             def __new__(cls, *k, **kw):
                 raise RuntimeError("GLib threads not enabled (you should use %s(threads=True)" % self.__class__.__name__)

@@ -27,7 +27,7 @@ import sys
 from asyncio import events
 from asyncio import futures
 from asyncio import tasks
-from asyncio.log import asyncio_log
+from asyncio.log import logger
 from asyncio.base_events import Server
 
 
@@ -581,7 +581,7 @@ class BaseEventLoop(events.AbstractEventLoop):
 #            level = logging.INFO
 #        else:
 #            level = logging.DEBUG
-#        asyncio_log.log(level, 'poll%s took %.3f seconds', argstr, t1-t0)
+#        logger.log(level, 'poll%s took %.3f seconds', argstr, t1-t0)
 #        self._process_events(event_list)
 #
 #        # Handle 'later' callbacks that are ready.
