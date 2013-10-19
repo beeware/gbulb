@@ -135,7 +135,7 @@ class ProactorSocketTransportTests(unittest.TestCase):
         self.loop._proactor.send.return_value.add_done_callback.\
             assert_called_with(tr._loop_writing)
 
-    @unittest.mock.patch('asyncio.proactor_events.asyncio_log')
+    @unittest.mock.patch('asyncio.proactor_events.logger')
     def test_loop_writing_err(self, m_log):
         err = self.loop._proactor.send.side_effect = OSError()
         tr = _ProactorSocketTransport(self.loop, self.sock, self.protocol)
@@ -207,7 +207,7 @@ class ProactorSocketTransportTests(unittest.TestCase):
         test_utils.run_briefly(self.loop)
         self.assertFalse(self.protocol.connection_lost.called)
 
-    @unittest.mock.patch('asyncio.proactor_events.asyncio_log')
+    @unittest.mock.patch('asyncio.proactor_events.logger')
     def test_fatal_error(self, m_logging):
         tr = _ProactorSocketTransport(self.loop, self.sock, self.protocol)
         tr._force_close = unittest.mock.Mock()
@@ -308,7 +308,7 @@ class ProactorSocketTransportTests(unittest.TestCase):
             tr.write_eof()
         tr.close()
 
-    def test_pause_resume(self):
+    def test_pause_resume_reading(self):
         tr = _ProactorSocketTransport(
             self.loop, self.sock, self.protocol)
         futures = []
@@ -323,12 +323,12 @@ class ProactorSocketTransportTests(unittest.TestCase):
         self.protocol.data_received.assert_called_with(b'data1')
         self.loop._run_once()
         self.protocol.data_received.assert_called_with(b'data2')
-        tr.pause()
+        tr.pause_reading()
         self.assertTrue(tr._paused)
         for i in range(10):
             self.loop._run_once()
         self.protocol.data_received.assert_called_with(b'data2')
-        tr.resume()
+        tr.resume_reading()
         self.assertFalse(tr._paused)
         self.loop._run_once()
         self.protocol.data_received.assert_called_with(b'data3')
@@ -432,7 +432,7 @@ class BaseProactorEventLoopTests(unittest.TestCase):
     def test_process_events(self):
         self.loop._process_events([])
 
-    @unittest.mock.patch('asyncio.proactor_events.asyncio_log')
+    @unittest.mock.patch('asyncio.proactor_events.logger')
     def test_create_server(self, m_log):
         pf = unittest.mock.Mock()
         call_soon = self.loop.call_soon = unittest.mock.Mock()

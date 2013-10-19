@@ -215,7 +215,7 @@ class EventLoopTestsMixin:
         t0 = self.loop.time()
         self.loop.run_until_complete(tasks.sleep(0.1, loop=self.loop))
         t1 = self.loop.time()
-        self.assertTrue(0.08 <= t1-t0 <= 0.12, t1-t0)
+        self.assertTrue(0.08 <= t1-t0 <= 0.8, t1-t0)
 
     def test_run_until_complete_stopped(self):
         @tasks.coroutine
@@ -238,7 +238,7 @@ class EventLoopTestsMixin:
         self.loop.run_forever()
         t1 = time.monotonic()
         self.assertEqual(results, ['hello world'])
-        self.assertTrue(0.09 <= t1-t0 <= 0.12, t1-t0)
+        self.assertTrue(0.08 <= t1-t0 <= 0.8, t1-t0)
 
     def test_call_soon(self):
         results = []
@@ -462,8 +462,8 @@ class EventLoopTestsMixin:
 
         self.loop.add_signal_handler(signal.SIGALRM, my_handler, *some_args)
 
-        signal.setitimer(signal.ITIMER_REAL, 0.01, 0)  # Send SIGALRM once.
-        self.loop.call_later(0.015, self.loop.stop)
+        signal.setitimer(signal.ITIMER_REAL, 0.1, 0)  # Send SIGALRM once.
+        self.loop.call_later(0.5, self.loop.stop)
         self.loop.run_forever()
         self.assertEqual(caught, 1)
 
@@ -510,7 +510,8 @@ class EventLoopTestsMixin:
     def test_create_ssl_connection(self):
         with test_utils.run_test_server(use_ssl=True) as httpd:
             f = self.loop.create_connection(
-                lambda: MyProto(loop=self.loop), *httpd.address, ssl=True)
+                lambda: MyProto(loop=self.loop), *httpd.address,
+                ssl=test_utils.dummy_ssl_context())
             tr, pr = self.loop.run_until_complete(f)
             self.assertTrue(isinstance(tr, transports.Transport))
             self.assertTrue(isinstance(pr, protocols.Protocol))
@@ -613,7 +614,8 @@ class EventLoopTestsMixin:
         host, port = sock.getsockname()
         self.assertEqual(host, '127.0.0.1')
 
-        f_c = self.loop.create_connection(ClientMyProto, host, port, ssl=True)
+        f_c = self.loop.create_connection(ClientMyProto, host, port,
+                                          ssl=test_utils.dummy_ssl_context())
         client, pr = self.loop.run_until_complete(f_c)
 
         client.write(b'xxx')
@@ -924,6 +926,7 @@ class EventLoopTestsMixin:
         ov = getattr(f, 'ov', None)
         self.assertTrue(ov is None or ov.pending)
 
+        @tasks.coroutine
         def main():
             try:
                 self.loop.call_soon(f.cancel)
@@ -1317,7 +1320,7 @@ class HandleTests(unittest.TestCase):
         self.assertRaises(
             AssertionError, events.make_handle, h1, ())
 
-    @unittest.mock.patch('asyncio.events.asyncio_log')
+    @unittest.mock.patch('asyncio.events.logger')
     def test_callback_with_exception(self, log):
         def callback():
             raise ValueError()
