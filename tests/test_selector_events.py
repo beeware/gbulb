@@ -1,5 +1,6 @@
 """Tests for selector_events.py"""
 
+import collections
 import errno
 import gc
 import pprint
@@ -12,16 +13,15 @@ try:
 except ImportError:
     ssl = None
 
-from tulip import futures
-from tulip import selectors
-from tulip import test_utils
-from tulip.events import AbstractEventLoop
-from tulip.protocols import DatagramProtocol, Protocol
-from tulip.selector_events import BaseSelectorEventLoop
-from tulip.selector_events import _SelectorTransport
-from tulip.selector_events import _SelectorSslTransport
-from tulip.selector_events import _SelectorSocketTransport
-from tulip.selector_events import _SelectorDatagramTransport
+from asyncio import futures
+from asyncio import selectors
+from asyncio import test_utils
+from asyncio.protocols import DatagramProtocol, Protocol
+from asyncio.selector_events import BaseSelectorEventLoop
+from asyncio.selector_events import _SelectorTransport
+from asyncio.selector_events import _SelectorSslTransport
+from asyncio.selector_events import _SelectorSocketTransport
+from asyncio.selector_events import _SelectorDatagramTransport
 
 
 class TestBaseSelectorEventLoop(BaseSelectorEventLoop):
@@ -525,10 +525,10 @@ class BaseSelectorEventLoopTests(unittest.TestCase):
         reader._cancelled = False
 
         self.loop._add_callback = unittest.mock.Mock()
-        self.loop._process_events([
-            (selectors.SelectorKey(1, 1, selectors.EVENT_READ, (reader, None)),
-             selectors.EVENT_READ),
-            ])
+        self.loop._process_events(
+            [(selectors.SelectorKey(
+                1, 1, selectors.EVENT_READ, (reader, None)),
+              selectors.EVENT_READ)])
         self.assertTrue(self.loop._add_callback.called)
         self.loop._add_callback.assert_called_with(reader)
 
@@ -537,10 +537,10 @@ class BaseSelectorEventLoopTests(unittest.TestCase):
         reader.cancelled = True
 
         self.loop.remove_reader = unittest.mock.Mock()
-        self.loop._process_events([
-            (selectors.SelectorKey(1, 1, selectors.EVENT_READ, (reader, None)),
-             selectors.EVENT_READ),
-            ])
+        self.loop._process_events(
+            [(selectors.SelectorKey(
+                1, 1, selectors.EVENT_READ, (reader, None)),
+             selectors.EVENT_READ)])
         self.loop.remove_reader.assert_called_with(1)
 
     def test_process_events_write(self):
@@ -548,11 +548,10 @@ class BaseSelectorEventLoopTests(unittest.TestCase):
         writer._cancelled = False
 
         self.loop._add_callback = unittest.mock.Mock()
-        self.loop._process_events([
-            (selectors.SelectorKey(1, 1, selectors.EVENT_WRITE,
-                                   (None, writer)),
-             selectors.EVENT_WRITE),
-            ])
+        self.loop._process_events(
+            [(selectors.SelectorKey(1, 1, selectors.EVENT_WRITE,
+                                    (None, writer)),
+              selectors.EVENT_WRITE)])
         self.loop._add_callback.assert_called_with(writer)
 
     def test_process_events_write_cancelled(self):
@@ -560,11 +559,10 @@ class BaseSelectorEventLoopTests(unittest.TestCase):
         writer.cancelled = True
         self.loop.remove_writer = unittest.mock.Mock()
 
-        self.loop._process_events([
-            (selectors.SelectorKey(1, 1, selectors.EVENT_WRITE,
-                                   (None, writer)),
-             selectors.EVENT_WRITE),
-            ])
+        self.loop._process_events(
+            [(selectors.SelectorKey(1, 1, selectors.EVENT_WRITE,
+                                    (None, writer)),
+              selectors.EVENT_WRITE)])
         self.loop.remove_writer.assert_called_with(1)
 
 
@@ -613,13 +611,13 @@ class SelectorTransportTests(unittest.TestCase):
 
     def test_force_close(self):
         tr = _SelectorTransport(self.loop, self.sock, self.protocol, None)
-        tr._buffer = [b'1']
+        tr._buffer.append(b'1')
         self.loop.add_reader(7, unittest.mock.sentinel)
         self.loop.add_writer(7, unittest.mock.sentinel)
         tr._force_close(None)
 
         self.assertTrue(tr._closing)
-        self.assertEqual(tr._buffer, [])
+        self.assertEqual(tr._buffer, collections.deque())
         self.assertFalse(self.loop.readers)
         self.assertFalse(self.loop.writers)
 
@@ -628,7 +626,7 @@ class SelectorTransportTests(unittest.TestCase):
         self.assertFalse(self.loop.readers)
         self.assertEqual(1, self.loop.remove_reader_count[7])
 
-    @unittest.mock.patch('tulip.log.tulip_log.exception')
+    @unittest.mock.patch('asyncio.log.asyncio_log.exception')
     def test_fatal_error(self, m_exc):
         exc = OSError()
         tr = _SelectorTransport(self.loop, self.sock, self.protocol, None)
@@ -669,7 +667,6 @@ class SelectorSocketTransportTests(unittest.TestCase):
         self.loop.assert_reader(7, tr._read_ready)
         test_utils.run_briefly(self.loop)
         self.protocol.connection_made.assert_called_with(tr)
-        self.assertTrue(tr._writing)
 
     def test_ctor_with_waiter(self):
         fut = futures.Future(loop=self.loop)
@@ -678,6 +675,18 @@ class SelectorSocketTransportTests(unittest.TestCase):
             self.loop, self.sock, self.protocol, fut)
         test_utils.run_briefly(self.loop)
         self.assertIsNone(fut.result())
+
+    def test_pause_resume(self):
+        tr = _SelectorSocketTransport(
+            self.loop, self.sock, self.protocol)
+        self.assertFalse(tr._paused)
+        self.loop.assert_reader(7, tr._read_ready)
+        tr.pause()
+        self.assertTrue(tr._paused)
+        self.assertFalse(7 in self.loop.readers)
+        tr.resume()
+        self.assertFalse(tr._paused)
+        self.loop.assert_reader(7, tr._read_ready)
 
     def test_read_ready(self):
         transport = _SelectorSocketTransport(
@@ -698,6 +707,18 @@ class SelectorSocketTransportTests(unittest.TestCase):
 
         self.protocol.eof_received.assert_called_with()
         transport.close.assert_called_with()
+
+    def test_read_ready_eof_keep_open(self):
+        transport = _SelectorSocketTransport(
+            self.loop, self.sock, self.protocol)
+        transport.close = unittest.mock.Mock()
+
+        self.sock.recv.return_value = b''
+        self.protocol.eof_received.return_value = True
+        transport._read_ready()
+
+        self.protocol.eof_received.assert_called_with()
+        self.assertFalse(transport.close.called)
 
     @unittest.mock.patch('logging.exception')
     def test_read_ready_tryagain(self, m_exc):
@@ -757,7 +778,7 @@ class SelectorSocketTransportTests(unittest.TestCase):
         transport._buffer.append(b'data')
         transport.write(b'')
         self.assertFalse(self.sock.send.called)
-        self.assertEqual([b'data'], transport._buffer)
+        self.assertEqual(collections.deque([b'data']), transport._buffer)
 
     def test_write_buffer(self):
         transport = _SelectorSocketTransport(
@@ -765,15 +786,8 @@ class SelectorSocketTransportTests(unittest.TestCase):
         transport._buffer.append(b'data1')
         transport.write(b'data2')
         self.assertFalse(self.sock.send.called)
-        self.assertEqual([b'data1', b'data2'], transport._buffer)
-
-    def test_write_paused(self):
-        transport = _SelectorSocketTransport(
-            self.loop, self.sock, self.protocol)
-        transport._writing = False
-        transport.write(b'data')
-        self.assertFalse(self.sock.send.called)
-        self.assertEqual(transport._buffer, [b'data'])
+        self.assertEqual(collections.deque([b'data1', b'data2']),
+                         transport._buffer)
 
     def test_write_partial(self):
         data = b'data'
@@ -784,7 +798,7 @@ class SelectorSocketTransportTests(unittest.TestCase):
         transport.write(data)
 
         self.loop.assert_writer(7, transport._write_ready)
-        self.assertEqual([b'ta'], transport._buffer)
+        self.assertEqual(collections.deque([b'ta']), transport._buffer)
 
     def test_write_partial_none(self):
         data = b'data'
@@ -796,7 +810,7 @@ class SelectorSocketTransportTests(unittest.TestCase):
         transport.write(data)
 
         self.loop.assert_writer(7, transport._write_ready)
-        self.assertEqual([b'data'], transport._buffer)
+        self.assertEqual(collections.deque([b'data']), transport._buffer)
 
     def test_write_tryagain(self):
         self.sock.send.side_effect = BlockingIOError
@@ -807,9 +821,9 @@ class SelectorSocketTransportTests(unittest.TestCase):
         transport.write(data)
 
         self.loop.assert_writer(7, transport._write_ready)
-        self.assertEqual([b'data'], transport._buffer)
+        self.assertEqual(collections.deque([b'data']), transport._buffer)
 
-    @unittest.mock.patch('tulip.selector_events.tulip_log')
+    @unittest.mock.patch('asyncio.selector_events.asyncio_log')
     def test_write_exception(self, m_log):
         err = self.sock.send.side_effect = OSError()
 
@@ -857,15 +871,6 @@ class SelectorSocketTransportTests(unittest.TestCase):
         self.assertEqual(self.sock.send.call_args[0], (data,))
         self.assertFalse(self.loop.writers)
 
-    def test_write_ready_paused(self):
-        transport = _SelectorSocketTransport(
-            self.loop, self.sock, self.protocol)
-        transport._writing = False
-        transport._buffer.append(b'data')
-        transport._write_ready()
-        self.assertFalse(self.sock.send.called)
-        self.assertEqual(transport._buffer, [b'data'])
-
     def test_write_ready_closing(self):
         data = b'data'
         self.sock.send.return_value = len(data)
@@ -896,7 +901,7 @@ class SelectorSocketTransportTests(unittest.TestCase):
         self.loop.add_writer(7, transport._write_ready)
         transport._write_ready()
         self.loop.assert_writer(7, transport._write_ready)
-        self.assertEqual([b'ta'], transport._buffer)
+        self.assertEqual(collections.deque([b'ta']), transport._buffer)
 
     def test_write_ready_partial_none(self):
         data = b'data'
@@ -908,19 +913,19 @@ class SelectorSocketTransportTests(unittest.TestCase):
         self.loop.add_writer(7, transport._write_ready)
         transport._write_ready()
         self.loop.assert_writer(7, transport._write_ready)
-        self.assertEqual([b'data'], transport._buffer)
+        self.assertEqual(collections.deque([b'data']), transport._buffer)
 
     def test_write_ready_tryagain(self):
         self.sock.send.side_effect = BlockingIOError
 
         transport = _SelectorSocketTransport(
             self.loop, self.sock, self.protocol)
-        transport._buffer = [b'data1', b'data2']
+        transport._buffer = collections.deque([b'data1', b'data2'])
         self.loop.add_writer(7, transport._write_ready)
         transport._write_ready()
 
         self.loop.assert_writer(7, transport._write_ready)
-        self.assertEqual([b'data1data2'], transport._buffer)
+        self.assertEqual(collections.deque([b'data1data2']), transport._buffer)
 
     def test_write_ready_exception(self):
         err = self.sock.send.side_effect = OSError()
@@ -932,58 +937,42 @@ class SelectorSocketTransportTests(unittest.TestCase):
         transport._write_ready()
         transport._fatal_error.assert_called_with(err)
 
-    def test_pause_writing(self):
+    @unittest.mock.patch('asyncio.selector_events.asyncio_log')
+    def test_write_ready_exception_and_close(self, m_log):
+        self.sock.send.side_effect = OSError()
+        remove_writer = self.loop.remove_writer = unittest.mock.Mock()
+
         transport = _SelectorSocketTransport(
             self.loop, self.sock, self.protocol)
+        transport.close()
         transport._buffer.append(b'data')
-        self.loop.add_writer(self.sock_fd, transport._write_ready)
-        transport.pause_writing()
-        self.assertFalse(transport._writing)
-        self.assertFalse(self.loop.writers)
-        self.assertEqual(1, self.loop.remove_writer_count[self.sock_fd])
+        transport._write_ready()
+        remove_writer.assert_called_with(self.sock_fd)
 
-        transport.pause_writing()
-        self.assertEqual(1, self.loop.remove_writer_count[self.sock_fd])
-
-    def test_pause_writing_no_buffer(self):
-        transport = _SelectorSocketTransport(
+    def test_write_eof(self):
+        tr = _SelectorSocketTransport(
             self.loop, self.sock, self.protocol)
-        transport.pause_writing()
-        self.assertFalse(transport._writing)
-        self.assertEqual(0, self.loop.remove_writer_count[7])
+        self.assertTrue(tr.can_write_eof())
+        tr.write_eof()
+        self.sock.shutdown.assert_called_with(socket.SHUT_WR)
+        tr.write_eof()
+        self.assertEqual(self.sock.shutdown.call_count, 1)
+        tr.close()
 
-    def test_resume_writing(self):
-        transport = _SelectorSocketTransport(
+    def test_write_eof_buffer(self):
+        tr = _SelectorSocketTransport(
             self.loop, self.sock, self.protocol)
-        transport._buffer.append(b'data')
-        transport.resume_writing()
-        self.assertFalse(self.loop.writers)
-
-        transport._writing = False
-        transport.resume_writing()
-        self.assertTrue(transport._writing)
-        self.loop.assert_writer(self.sock_fd, transport._write_ready)
-
-    def test_resume_writing_no_buffer(self):
-        transport = _SelectorSocketTransport(
-            self.loop, self.sock, self.protocol)
-        transport._writing = False
-        transport.resume_writing()
-        self.assertTrue(transport._writing)
-        self.assertFalse(self.loop.writers)
-
-    def test_discard_output(self):
-        transport = _SelectorSocketTransport(
-            self.loop, self.sock, self.protocol)
-        transport.discard_output()
-        self.assertEqual(0, self.loop.remove_writer_count[self.sock_fd])
-
-        transport._buffer.append(b'data')
-        self.loop.add_writer(self.sock_fd, transport._write_ready)
-        transport.discard_output()
-        self.assertEqual(transport._buffer, [])
-        self.assertEqual(1, self.loop.remove_writer_count[self.sock_fd])
-        self.assertFalse(self.loop.writers)
+        self.sock.send.side_effect = BlockingIOError
+        tr.write(b'data')
+        tr.write_eof()
+        self.assertEqual(tr._buffer, collections.deque([b'data']))
+        self.assertTrue(tr._eof)
+        self.assertFalse(self.sock.shutdown.called)
+        self.sock.send.side_effect = lambda _: 4
+        tr._write_ready()
+        self.sock.send.assert_called_with(b'data')
+        self.sock.shutdown.assert_called_with(socket.SHUT_WR)
+        tr.close()
 
 
 @unittest.skipIf(ssl is None, 'No ssl module')
@@ -1055,11 +1044,22 @@ class SelectorSslTransportTests(unittest.TestCase):
         self.assertTrue(transport._waiter.done())
         self.assertIs(exc, transport._waiter.exception())
 
+    def test_pause_resume(self):
+        tr = self._make_one()
+        self.assertFalse(tr._paused)
+        self.loop.assert_reader(1, tr._on_ready)
+        tr.pause()
+        self.assertTrue(tr._paused)
+        self.assertFalse(1 in self.loop.readers)
+        tr.resume()
+        self.assertFalse(tr._paused)
+        self.loop.assert_reader(1, tr._on_ready)
+
     def test_write_no_data(self):
         transport = self._make_one()
         transport._buffer.append(b'data')
         transport.write(b'')
-        self.assertEqual([b'data'], transport._buffer)
+        self.assertEqual(collections.deque([b'data']), transport._buffer)
 
     def test_write_str(self):
         transport = self._make_one()
@@ -1072,12 +1072,12 @@ class SelectorSslTransportTests(unittest.TestCase):
         transport.write(b'data')
         self.assertEqual(transport._conn_lost, 2)
 
-    @unittest.mock.patch('tulip.selector_events.tulip_log')
+    @unittest.mock.patch('asyncio.selector_events.asyncio_log')
     def test_write_exception(self, m_log):
         transport = self._make_one()
         transport._conn_lost = 1
         transport.write(b'data')
-        self.assertEqual(transport._buffer, [])
+        self.assertEqual(transport._buffer, collections.deque())
         transport.write(b'data')
         transport.write(b'data')
         transport.write(b'data')
@@ -1136,34 +1136,34 @@ class SelectorSslTransportTests(unittest.TestCase):
         self.sslsock.recv.side_effect = ssl.SSLWantReadError
         self.sslsock.send.return_value = 4
         transport = self._make_one()
-        transport._buffer = [b'data']
+        transport._buffer = collections.deque([b'data'])
         transport._on_ready()
-        self.assertEqual([], transport._buffer)
+        self.assertEqual(collections.deque(), transport._buffer)
         self.assertTrue(self.sslsock.send.called)
 
     def test_on_ready_send_none(self):
         self.sslsock.recv.side_effect = ssl.SSLWantReadError
         self.sslsock.send.return_value = 0
         transport = self._make_one()
-        transport._buffer = [b'data1', b'data2']
+        transport._buffer = collections.deque([b'data1', b'data2'])
         transport._on_ready()
         self.assertTrue(self.sslsock.send.called)
-        self.assertEqual([b'data1data2'], transport._buffer)
+        self.assertEqual(collections.deque([b'data1data2']), transport._buffer)
 
     def test_on_ready_send_partial(self):
         self.sslsock.recv.side_effect = ssl.SSLWantReadError
         self.sslsock.send.return_value = 2
         transport = self._make_one()
-        transport._buffer = [b'data1', b'data2']
+        transport._buffer = collections.deque([b'data1', b'data2'])
         transport._on_ready()
         self.assertTrue(self.sslsock.send.called)
-        self.assertEqual([b'ta1data2'], transport._buffer)
+        self.assertEqual(collections.deque([b'ta1data2']), transport._buffer)
 
     def test_on_ready_send_closing_partial(self):
         self.sslsock.recv.side_effect = ssl.SSLWantReadError
         self.sslsock.send.return_value = 2
         transport = self._make_one()
-        transport._buffer = [b'data1', b'data2']
+        transport._buffer = collections.deque([b'data1', b'data2'])
         transport._on_ready()
         self.assertTrue(self.sslsock.send.called)
         self.assertFalse(self.sslsock.close.called)
@@ -1173,7 +1173,7 @@ class SelectorSslTransportTests(unittest.TestCase):
         self.sslsock.send.return_value = 4
         transport = self._make_one()
         transport.close()
-        transport._buffer = [b'data']
+        transport._buffer = collections.deque([b'data'])
         transport._on_ready()
         self.assertFalse(self.loop.writers)
         self.protocol.connection_lost.assert_called_with(None)
@@ -1183,7 +1183,7 @@ class SelectorSslTransportTests(unittest.TestCase):
         self.sslsock.send.return_value = 4
         transport = self._make_one()
         transport.close()
-        transport._buffer = []
+        transport._buffer = collections.deque()
         transport._on_ready()
         self.assertFalse(self.loop.writers)
         self.protocol.connection_lost.assert_called_with(None)
@@ -1192,31 +1192,36 @@ class SelectorSslTransportTests(unittest.TestCase):
         self.sslsock.recv.side_effect = ssl.SSLWantReadError
 
         transport = self._make_one()
-        transport._buffer = [b'data']
+        transport._buffer = collections.deque([b'data'])
 
         self.sslsock.send.side_effect = ssl.SSLWantReadError
         transport._on_ready()
         self.assertTrue(self.sslsock.send.called)
-        self.assertEqual([b'data'], transport._buffer)
+        self.assertEqual(collections.deque([b'data']), transport._buffer)
 
         self.sslsock.send.side_effect = ssl.SSLWantWriteError
         transport._on_ready()
-        self.assertEqual([b'data'], transport._buffer)
+        self.assertEqual(collections.deque([b'data']), transport._buffer)
 
         self.sslsock.send.side_effect = BlockingIOError()
         transport._on_ready()
-        self.assertEqual([b'data'], transport._buffer)
+        self.assertEqual(collections.deque([b'data']), transport._buffer)
 
     def test_on_ready_send_exc(self):
         self.sslsock.recv.side_effect = ssl.SSLWantReadError
         err = self.sslsock.send.side_effect = OSError()
 
         transport = self._make_one()
-        transport._buffer = [b'data']
+        transport._buffer = collections.deque([b'data'])
         transport._fatal_error = unittest.mock.Mock()
         transport._on_ready()
         transport._fatal_error.assert_called_with(err)
-        self.assertEqual([], transport._buffer)
+        self.assertEqual(collections.deque(), transport._buffer)
+
+    def test_write_eof(self):
+        tr = self._make_one()
+        self.assertFalse(tr.can_write_eof())
+        self.assertRaises(NotImplementedError, tr.write_eof)
 
     def test_close(self):
         tr = self._make_one()
@@ -1229,6 +1234,15 @@ class SelectorSslTransportTests(unittest.TestCase):
         tr.close()
         self.assertEqual(tr._conn_lost, 1)
         self.assertEqual(1, self.loop.remove_reader_count[1])
+
+    @unittest.skipIf(ssl is None or not ssl.HAS_SNI, 'No SNI support')
+    def test_server_hostname(self):
+        _SelectorSslTransport(
+            self.loop, self.sock, self.protocol, self.sslcontext,
+            server_hostname='localhost')
+        self.sslcontext.wrap_socket.assert_called_with(
+            self.sock, do_handshake_on_connect=False, server_side=False,
+            server_hostname='localhost')
 
 
 class SelectorDatagramTransportTests(unittest.TestCase):
@@ -1311,7 +1325,7 @@ class SelectorDatagramTransportTests(unittest.TestCase):
         self.assertEqual(
             [(b'data', ('0.0.0.0', 12345))], list(transport._buffer))
 
-    @unittest.mock.patch('tulip.selector_events.tulip_log')
+    @unittest.mock.patch('asyncio.selector_events.asyncio_log')
     def test_sendto_exception(self, m_log):
         data = b'data'
         err = self.sock.sendto.side_effect = OSError()
@@ -1461,7 +1475,7 @@ class SelectorDatagramTransportTests(unittest.TestCase):
 
         self.assertTrue(transport._fatal_error.called)
 
-    @unittest.mock.patch('tulip.log.tulip_log.exception')
+    @unittest.mock.patch('asyncio.log.asyncio_log.exception')
     def test_fatal_error_connected(self, m_exc):
         transport = _SelectorDatagramTransport(
             self.loop, self.sock, self.protocol, ('0.0.0.0', 1))
