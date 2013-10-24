@@ -20,6 +20,7 @@ from asyncio import tasks
 from asyncio import transports
 from asyncio.log import logger
 
+from asyncio.unix_events import AbstractChildWatcher, get_child_watcher, set_child_watcher
 
 __all__ = ['SelectorEventLoop', 'STDIN', 'STDOUT', 'STDERR']
 
@@ -41,7 +42,7 @@ class SelectorEventLoop(selector_events.BaseSelectorEventLoop):
     def __init__(self):
         super().__init__()
 #        self._signal_handlers = {}
-        self._subprocesses = {}
+#        self._subprocesses = {}
 
     def _socketpair(self):
         return socket.socketpair()
@@ -154,25 +155,22 @@ class SelectorEventLoop(selector_events.BaseSelectorEventLoop):
                                    stdin, stdout, stderr, bufsize,
                                    extra=None, **kwargs):
 #        self._reg_sigchld()
-        transp = _UnixSubprocessTransport(self, protocol, args, shell,
-                                          stdin, stdout, stderr, bufsize,
-                                          extra=None, **kwargs)
-        self._add_child_handler(transp.get_pid(), self._sig_chld_callback, transp.get_pid())
-        self._subprocesses[transp.get_pid()] = transp
+        with get_child_watcher() as watcher:
+            transp = _UnixSubprocessTransport(self, protocol, args, shell,
+                                              stdin, stdout, stderr, bufsize,
+                                              extra=None, **kwargs)
+            watcher.add_child_handler(transp.get_pid(), self._child_watcher_callback, transp)
         yield from transp._post_init()
         return transp
 
-    def _sig_chld_callback(self, pid, returncode):
-        transp = self._subprocesses.get(pid)
-        if transp is not None:
-            transp._process_exited(returncode)
+    def _child_watcher_callback(self, pid, returncode, transp):
+        self.call_soon_threadsafe(transp._process_exited, returncode)
 
-    #FIXME: PEP 3156 says that only the main thread is allowed to handle
-    # signals
-    #   -> raise RuntimeError if this particular event loop instance cannot
-    #   handle signals (since signals are global per process, only an event
-    #   loop associated with the main thread can handle signals).
-    # -> need an interface between the main and child threads
+#    def _sig_chld_callback(self, pid, returncode):
+#        transp = self._subprocesses.get(pid)
+#        if transp is not None:
+#            transp._process_exited(returncode)
+#
 #    def _reg_sigchld(self):
 #        if signal.SIGCHLD not in self._signal_handlers:
 #            self.add_signal_handler(signal.SIGCHLD, self._sig_chld)
@@ -198,11 +196,11 @@ class SelectorEventLoop(selector_events.BaseSelectorEventLoop):
 #                transp._process_exited(returncode)
 #        except Exception:
 #            logger.exception('Unknown exception in SIGCHLD handler')
-
-    def _subprocess_closed(self, transport):
-        pid = transport.get_pid()
-        self._remove_child_handler(pid)
-        self._subprocesses.pop(pid, None)
+#
+#    def _subprocess_closed(self, transport):
+#        pid = transport.get_pid()
+#        self._remove_child_handler(pid)
+#        self._subprocesses.pop(pid, None)
 
 
 def _set_nonblocking(fd):
@@ -532,7 +530,6 @@ class _UnixSubprocessTransport(transports.SubprocessTransport):
         assert returncode is not None, returncode
         assert self._returncode is None, self._returncode
         self._returncode = returncode
-        self._loop._subprocess_closed(self)
         self._call(self._protocol.process_exited)
         self._try_finish()
 

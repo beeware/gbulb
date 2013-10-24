@@ -1298,12 +1298,16 @@ else:
     class GLibEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
 
         def create_event_loop(self):
-            return gbulb.GLibEventLoop(GLib.main_context_default())
+            loop = gbulb.GLibEventLoop(GLib.main_context_default())
+            unix_events.set_child_watcher(gbulb.GLibChildWatcher())
+            return loop
 
     class GtkEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
 
         def create_event_loop(self):
-            return gbulb.GtkEventLoop()
+            loop = gbulb.GtkEventLoop()
+            unix_events.set_child_watcher(gbulb.GLibChildWatcher())
+            return loop
 
 
 class HandleTests(unittest.TestCase):
