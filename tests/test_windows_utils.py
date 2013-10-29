@@ -11,11 +11,7 @@ if sys.platform != 'win32':
 import _winapi
 
 from asyncio import windows_utils
-
-try:
-    import _overlapped
-except ImportError:
-    from asyncio import _overlapped
+from asyncio import _overlapped
 
 
 class WinsocketpairTests(unittest.TestCase):
@@ -138,3 +134,7 @@ class PopenTests(unittest.TestCase):
         # allow for partial reads...
         self.assertTrue(msg.upper().rstrip().startswith(out))
         self.assertTrue(b"stderr".startswith(err))
+
+
+if __name__ == '__main__':
+    unittest.main()
