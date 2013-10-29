@@ -1,9 +1,7 @@
 """Selector eventloop for Unix with signal handling."""
 
-import collections
 import errno
 import fcntl
-import functools
 import os
 import signal
 import socket
@@ -12,6 +10,7 @@ import subprocess
 import sys
 
 
+from . import base_subprocess
 from . import constants
 from . import events
 from . import protocols
@@ -167,23 +166,29 @@ class SelectorEventLoop(selector_events.BaseSelectorEventLoop):
 
     def _sig_chld(self):
         try:
-            try:
-                pid, status = os.waitpid(0, os.WNOHANG)
-            except ChildProcessError:
-                return
-            if pid == 0:
-                self.call_soon(self._sig_chld)
-                return
-            elif os.WIFSIGNALED(status):
-                returncode = -os.WTERMSIG(status)
-            elif os.WIFEXITED(status):
-                returncode = os.WEXITSTATUS(status)
-            else:
-                self.call_soon(self._sig_chld)
-                return
-            transp = self._subprocesses.get(pid)
-            if transp is not None:
-                transp._process_exited(returncode)
+            # Because of signal coalescing, we must keep calling waitpid() as
+            # long as we're able to reap a child.
+            while True:
+                try:
+                    pid, status = os.waitpid(-1, os.WNOHANG)
+                except ChildProcessError:
+                    break  # No more child processes exist.
+                if pid == 0:
+                    break  # All remaining child processes are still alive.
+                elif os.WIFSIGNALED(status):
+                    # A child process died because of a signal.
+                    returncode = -os.WTERMSIG(status)
+                elif os.WIFEXITED(status):
+                    # A child process exited (e.g. sys.exit()).
+                    returncode = os.WEXITSTATUS(status)
+                else:
+                    # A child exited, but we don't understand its status.
+                    # This shouldn't happen, but if it does, let's just
+                    # return that status; perhaps that helps debug it.
+                    returncode = status
+                transp = self._subprocesses.get(pid)
+                if transp is not None:
+                    transp._process_exited(returncode)
         except Exception:
             logger.exception('Unknown exception in SIGCHLD handler')
 
@@ -208,6 +213,9 @@ class _UnixReadPipeTransport(transports.ReadTransport):
         self._loop = loop
         self._pipe = pipe
         self._fileno = pipe.fileno()
+        mode = os.fstat(self._fileno).st_mode
+        if not (stat.S_ISFIFO(mode) or stat.S_ISSOCK(mode)):
+            raise ValueError("Pipe transport is for pipes/sockets only.")
         _set_nonblocking(self._fileno)
         self._protocol = protocol
         self._closing = False
@@ -270,21 +278,29 @@ class _UnixWritePipeTransport(transports.WriteTransport):
         self._loop = loop
         self._pipe = pipe
         self._fileno = pipe.fileno()
-        if not stat.S_ISFIFO(os.fstat(self._fileno).st_mode):
-            raise ValueError("Pipe transport is for pipes only.")
+        mode = os.fstat(self._fileno).st_mode
+        is_socket = stat.S_ISSOCK(mode)
+        is_pipe = stat.S_ISFIFO(mode)
+        if not (is_socket or is_pipe):
+            raise ValueError("Pipe transport is for pipes/sockets only.")
         _set_nonblocking(self._fileno)
         self._protocol = protocol
         self._buffer = []
         self._conn_lost = 0
         self._closing = False  # Set when close() or write_eof() called.
-        self._loop.add_reader(self._fileno, self._read_ready)
+
+        # On AIX, the reader trick only works for sockets.
+        # On other platforms it works for pipes and sockets.
+        # (Exception: OS X 10.4?  Issue #19294.)
+        if is_socket or not sys.platform.startswith("aix"):
+            self._loop.add_reader(self._fileno, self._read_ready)
 
         self._loop.call_soon(self._protocol.connection_made, self)
         if waiter is not None:
             self._loop.call_soon(waiter.set_result, None)
 
     def _read_ready(self):
-        # pipe was closed by peer
+        # Pipe was closed by peer.
         self._close()
 
     def write(self, data):
@@ -390,152 +406,20 @@ class _UnixWritePipeTransport(transports.WriteTransport):
             self._loop = None
 
 
-class _UnixWriteSubprocessPipeProto(protocols.BaseProtocol):
-    pipe = None
+class _UnixSubprocessTransport(base_subprocess.BaseSubprocessTransport):
 
-    def __init__(self, proc, fd):
-        self.proc = proc
-        self.fd = fd
-        self.connected = False
-        self.disconnected = False
-        proc._pipes[fd] = self
-
-    def connection_made(self, transport):
-        self.connected = True
-        self.pipe = transport
-        self.proc._try_connected()
-
-    def connection_lost(self, exc):
-        self.disconnected = True
-        self.proc._pipe_connection_lost(self.fd, exc)
-
-
-class _UnixReadSubprocessPipeProto(_UnixWriteSubprocessPipeProto,
-                                   protocols.Protocol):
-
-    def data_received(self, data):
-        self.proc._pipe_data_received(self.fd, data)
-
-    def eof_received(self):
-        pass
-
-
-class _UnixSubprocessTransport(transports.SubprocessTransport):
-
-    def __init__(self, loop, protocol, args, shell,
-                 stdin, stdout, stderr, bufsize,
-                 extra=None, **kwargs):
-        super().__init__(extra)
-        self._protocol = protocol
-        self._loop = loop
-
-        self._pipes = {}
+    def _start(self, args, shell, stdin, stdout, stderr, bufsize, **kwargs):
+        stdin_w = None
         if stdin == subprocess.PIPE:
-            self._pipes[STDIN] = None
-        if stdout == subprocess.PIPE:
-            self._pipes[STDOUT] = None
-        if stderr == subprocess.PIPE:
-            self._pipes[STDERR] = None
-        self._pending_calls = collections.deque()
-        self._finished = False
-        self._returncode = None
-
+            # Use a socket pair for stdin, since not all platforms
+            # support selecting read events on the write end of a
+            # socket (which we use in order to detect closing of the
+            # other end).  Notably this is needed on AIX, and works
+            # just fine on other platforms.
+            stdin, stdin_w = self._loop._socketpair()
         self._proc = subprocess.Popen(
             args, shell=shell, stdin=stdin, stdout=stdout, stderr=stderr,
             universal_newlines=False, bufsize=bufsize, **kwargs)
-        self._extra['subprocess'] = self._proc
-
-    def close(self):
-        for proto in self._pipes.values():
-            proto.pipe.close()
-        if self._returncode is None:
-            self.terminate()
-
-    def get_pid(self):
-        return self._proc.pid
-
-    def get_returncode(self):
-        return self._returncode
-
-    def get_pipe_transport(self, fd):
-        if fd in self._pipes:
-            return self._pipes[fd].pipe
-        else:
-            return None
-
-    def send_signal(self, signal):
-        self._proc.send_signal(signal)
-
-    def terminate(self):
-        self._proc.terminate()
-
-    def kill(self):
-        self._proc.kill()
-
-    @tasks.coroutine
-    def _post_init(self):
-        proc = self._proc
-        loop = self._loop
-        if proc.stdin is not None:
-            transp, proto = yield from loop.connect_write_pipe(
-                functools.partial(
-                    _UnixWriteSubprocessPipeProto, self, STDIN),
-                proc.stdin)
-        if proc.stdout is not None:
-            transp, proto = yield from loop.connect_read_pipe(
-                functools.partial(
-                    _UnixReadSubprocessPipeProto, self, STDOUT),
-                proc.stdout)
-        if proc.stderr is not None:
-            transp, proto = yield from loop.connect_read_pipe(
-                functools.partial(
-                    _UnixReadSubprocessPipeProto, self, STDERR),
-                proc.stderr)
-        if not self._pipes:
-            self._try_connected()
-
-    def _call(self, cb, *data):
-        if self._pending_calls is not None:
-            self._pending_calls.append((cb, data))
-        else:
-            self._loop.call_soon(cb, *data)
-
-    def _try_connected(self):
-        assert self._pending_calls is not None
-        if all(p is not None and p.connected for p in self._pipes.values()):
-            self._loop.call_soon(self._protocol.connection_made, self)
-            for callback, data in self._pending_calls:
-                self._loop.call_soon(callback, *data)
-            self._pending_calls = None
-
-    def _pipe_connection_lost(self, fd, exc):
-        self._call(self._protocol.pipe_connection_lost, fd, exc)
-        self._try_finish()
-
-    def _pipe_data_received(self, fd, data):
-        self._call(self._protocol.pipe_data_received, fd, data)
-
-    def _process_exited(self, returncode):
-        assert returncode is not None, returncode
-        assert self._returncode is None, self._returncode
-        self._returncode = returncode
-        self._loop._subprocess_closed(self)
-        self._call(self._protocol.process_exited)
-        self._try_finish()
-
-    def _try_finish(self):
-        assert not self._finished
-        if self._returncode is None:
-            return
-        if all(p is not None and p.disconnected
-               for p in self._pipes.values()):
-            self._finished = True
-            self._loop.call_soon(self._call_connection_lost, None)
-
-    def _call_connection_lost(self, exc):
-        try:
-            self._protocol.connection_lost(exc)
-        finally:
-            self._proc = None
-            self._protocol = None
-            self._loop = None
+        if stdin_w is not None:
+            stdin.close()
+            self._proc.stdin = open(stdin_w.detach(), 'rb', buffering=bufsize)

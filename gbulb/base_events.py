@@ -185,6 +185,14 @@ class BaseEventLoop(events.AbstractEventLoop):
         """
         self.call_soon(_raise_stop_error)
 
+    def close(self):
+        self._ready.clear()
+        self._scheduled.clear()
+        executor = self._default_executor
+        if executor is not None:
+            self._default_executor = None
+            executor.shutdown(wait=False)
+
     def is_running(self):
         """Returns running status of event loop."""
         return self._running
@@ -456,7 +464,11 @@ class BaseEventLoop(events.AbstractEventLoop):
             try:
                 for res in infos:
                     af, socktype, proto, canonname, sa = res
-                    sock = socket.socket(af, socktype, proto)
+                    try:
+                        sock = socket.socket(af, socktype, proto)
+                    except socket.error:
+                        # Assume it's a bad family/type/protocol combination.
+                        continue
                     sockets.append(sock)
                     if reuse_address:
                         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,

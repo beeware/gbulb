@@ -5,6 +5,7 @@ also includes support for signal handling, see the unix_events sub-module.
 """
 
 import collections
+import errno
 import socket
 try:
     import ssl
@@ -56,6 +57,7 @@ class BaseSelectorEventLoop(base_events.BaseEventLoop):
             self._close_self_pipe()
             self._selector.close()
             self._selector = None
+            super().close()
 
     def _socketpair(self):
         raise NotImplementedError
@@ -99,10 +101,7 @@ class BaseSelectorEventLoop(base_events.BaseEventLoop):
             conn.setblocking(False)
         except (BlockingIOError, InterruptedError):
             pass  # False alarm.
-        except Exception:
-            # Bad error. Stop serving.
-            self.remove_reader(sock.fileno())
-            sock.close()
+        except Exception as exc:
             # There's nowhere to send the error, so just log it.
             # TODO: Someone will want an error handler for this.
             logger.exception('Accept failed')
@@ -467,7 +466,12 @@ class _SelectorSocketTransport(_SelectorTransport):
                 self._protocol.data_received(data)
             else:
                 keep_open = self._protocol.eof_received()
-                if not keep_open:
+                if keep_open:
+                    # We're keeping the connection open so the
+                    # protocol can write more, but we still can't
+                    # receive more, so remove the reader callback.
+                    self._loop.remove_reader(self._sock_fd)
+                else:
                     self.close()
 
     def write(self, data):
@@ -604,7 +608,7 @@ class _SelectorSslTransport(_SelectorTransport):
         # Verify hostname if requested.
         peercert = self._sock.getpeercert()
         if (self._server_hostname is not None and
-            self._sslcontext.verify_mode == ssl.CERT_REQUIRED):
+            self._sslcontext.verify_mode != ssl.CERT_NONE):
             try:
                 ssl.match_hostname(peercert, self._server_hostname)
             except Exception as exc:
