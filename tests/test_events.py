@@ -1356,12 +1356,13 @@ else:
         def create_event_loop(self):
             return gbulb.GLibEventLoop(GLib.main_context_default())
 
-    class GtkEventLoopTests(EventLoopTestsMixin,
-                            SubprocessTestsMixin,
-                            unittest.TestCase):
+    if gbulb.Gtk:  
+        class GtkEventLoopTests(EventLoopTestsMixin,
+                                SubprocessTestsMixin,
+                                unittest.TestCase):
 
-        def create_event_loop(self):
-            return gbulb.GtkEventLoop()
+            def create_event_loop(self):
+                return gbulb.GtkEventLoop()
 
 
 class HandleTests(unittest.TestCase):

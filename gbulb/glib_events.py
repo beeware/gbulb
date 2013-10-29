@@ -1,7 +1,11 @@
 # vim:sw=4:sts=4:nosta:et:
 """PEP 3156 event loop based on GLib"""
 
-from gi.repository import GLib, GObject, Gtk, Gio
+from gi.repository import GLib, GObject, Gio
+try:
+    from gi.repository import Gtk
+except ImportError:
+    Gtk = None
 
 from asyncio import events
 from asyncio import futures
@@ -575,53 +579,53 @@ class GLibEventLoop(BaseGLibEventLoop):
 
         return self._mainloop is not None
 
+if Gtk:
+    class GtkEventLoop(BaseGLibEventLoop):
+        """Gtk event loop
 
-class GtkEventLoop(BaseGLibEventLoop):
-    """Gtk event loop
+        See the module documentation for more details
+        """
 
-    See the module documentation for more details
-    """
+        def __init__(self):
+            super().__init__(GLib.main_context_default())
 
-    def __init__(self):
-        super().__init__(GLib.main_context_default())
+            self._running     = False
+            self._interrupted = False
 
-        self._running     = False
-        self._interrupted = False
+        def run_forever(self):
+            """Run the event loop until stop() is called."""
 
-    def run_forever(self):
-        """Run the event loop until stop() is called."""
+            if self._running:
+                raise RuntimeError('Event loop is running.')
 
-        if self._running:
-            raise RuntimeError('Event loop is running.')
+            # We do not run the callbacks immediately. We need to call them
+            # when the Gtk loop is running, in case one callback calls .stop()
+            self._schedule_dispatch()
 
-        # We do not run the callbacks immediately. We need to call them
-        # when the Gtk loop is running, in case one callback calls .stop()
-        self._schedule_dispatch()
+            self._running = True
+            try:
+                Gtk.main()
 
-        self._running = True
-        try:
-            Gtk.main()
+                if self._interrupted:
+                    # ._interrupted is set when SIGINT is caught be the default
+                    # signal handler implemented in this module.
+                    #
+                    # If no user-defined handler is registered, then the default
+                    # behaviour is just to raise KeyboardInterrupt
+                    #
+                    self._interrupted = False
+                    raise KeyboardInterrupt()
+            finally:
+                self._running = False
 
-            if self._interrupted:
-                # ._interrupted is set when SIGINT is caught be the default
-                # signal handler implemented in this module.
-                #
-                # If no user-defined handler is registered, then the default
-                # behaviour is just to raise KeyboardInterrupt
-                #
-                self._interrupted = False
-                raise KeyboardInterrupt()
-        finally:
-            self._running = False
+        def stop(self):
+            # TODO: maybe remove the if
+            if self._running:
+                Gtk.main_quit()
 
-    def stop(self):
-        # TODO: maybe remove the if
-        if self._running:
-            Gtk.main_quit()
-
-    def is_running(self):
-        """Return whether the event loop is currently running."""
-        return self._running
+        def is_running(self):
+            """Return whether the event loop is currently running."""
+            return self._running
 
 class GApplicationEventLoop(BaseGLibEventLoop):
     """GApplication event loop
@@ -770,12 +774,13 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
     def _new_default_loop(self):
         return GLibEventLoop(GLib.main_context_default())
 
-class GtkEventLoopPolicy(GLibEventLoopPolicy):
-    def __init__(self, *, full=False, threads=True):
-        super().__init__ (default=True, full=full, threads=threads)
+if Gtk:
+    class GtkEventLoopPolicy(GLibEventLoopPolicy):
+        def __init__(self, *, full=False, threads=True):
+            super().__init__ (default=True, full=full, threads=threads)
 
-    def _new_default_loop(self):
-        return GtkEventLoop()
+        def _new_default_loop(self):
+            return GtkEventLoop()
 
 class GApplicationEventLoopPolicy(GLibEventLoopPolicy):
     def __init__(self, *, full=False, threads=True):
