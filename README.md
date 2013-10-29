@@ -21,10 +21,10 @@ Apache 2.0
 
 ## Requirements
 - python3.3
-- tulip (asyncio branch)
-- glib 
-- gtk+3
+- tulip
 - pygobject
+- glib 
+- gtk+3 (optional)
 
 ## Usage
 
