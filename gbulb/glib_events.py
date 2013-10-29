@@ -272,8 +272,23 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         raise NotImplementedError
 
     def close(self):
+        for fd in list(self._readers):
+            self.remove_reader(fd)
+
+        for fd in list(self._writers):
+            self.remove_writer(fd)
+
+        for sig in list(self._sighandlers):
+            self.remove_signal_handler(sig)
+
+        for pid in list(self._chldhandlers):
+            self._remove_child_handler(pid)
+
         for s in list(self._handlers):
             s.cancel()
+
+        self._ready.clear() 
+
         self._default_sigint_handler.detach(self)
 
         super().close()
