@@ -92,11 +92,11 @@ _MAX_WORKERS = 5
 class BaseEventLoop(events.AbstractEventLoop):
 
     def __init__(self):
-        self._ready = collections.deque()
-        self._scheduled = []
+#        self._ready = collections.deque()
+#        self._scheduled = []
         self._default_executor = None
         self._internal_fds = 0
-        self._running = False
+#        self._running = False
 
     def _make_socket_transport(self, sock, protocol, waiter=None, *,
                                extra=None, server=None):
@@ -187,8 +187,8 @@ class BaseEventLoop(events.AbstractEventLoop):
 #        self.call_soon(_raise_stop_error)
 
     def close(self):
-        self._ready.clear()
-        self._scheduled.clear()
+#        self._ready.clear()
+#        self._scheduled.clear()
         executor = self._default_executor
         if executor is not None:
             self._default_executor = None
