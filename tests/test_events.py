@@ -18,7 +18,7 @@ import time
 import errno
 import unittest
 import unittest.mock
-from test.support import find_unused_port
+from test.support import find_unused_port, IPV6_ENABLED
 
 
 from asyncio import futures
@@ -564,14 +564,15 @@ class EventLoopTestsMixin:
         self.assertEqual(host, '0.0.0.0')
         client = socket.socket()
         client.connect(('127.0.0.1', port))
-        client.send(b'xxx')
+        client.sendall(b'xxx')
         test_utils.run_briefly(self.loop)
         self.assertIsInstance(proto, MyProto)
 #run_briefly() cannot guarantee that we run a single iteration (in the GLib loop)
 #        self.assertEqual('INITIAL', proto.state)
         test_utils.run_briefly(self.loop)
         self.assertEqual('CONNECTED', proto.state)
-        test_utils.run_briefly(self.loop)  # windows iocp
+        test_utils.run_until(self.loop, lambda: proto.nbytes > 0,
+                             timeout=10)
         self.assertEqual(3, proto.nbytes)
 
         # extra info is available
@@ -630,6 +631,8 @@ class EventLoopTestsMixin:
         self.assertIsInstance(proto, MyProto)
         test_utils.run_briefly(self.loop)
         self.assertEqual('CONNECTED', proto.state)
+        test_utils.run_until(self.loop, lambda: proto.nbytes > 0,
+                             timeout=10)
         self.assertEqual(3, proto.nbytes)
 
         # extra info is available
@@ -691,7 +694,7 @@ class EventLoopTestsMixin:
 
         server.close()
 
-    @unittest.skipUnless(socket.has_ipv6, 'IPv6 not supported')
+    @unittest.skipUnless(IPV6_ENABLED, 'IPv6 not supported or enabled')
     def test_create_server_dual_stack(self):
         f_proto = futures.Future(loop=self.loop)
 
@@ -900,8 +903,8 @@ class EventLoopTestsMixin:
             proto = MyWritePipeProto(loop=self.loop)
             return proto
 
-        rpipe, wpipe = os.pipe()
-        pipeobj = io.open(wpipe, 'wb', 1024)
+        rsock, wsock = self.loop._socketpair()
+        pipeobj = io.open(wsock.detach(), 'wb', 1024)
 
         @tasks.coroutine
         def connect():
@@ -917,11 +920,10 @@ class EventLoopTestsMixin:
         self.assertEqual('CONNECTED', proto.state)
 
         transport.write(b'1')
-        test_utils.run_briefly(self.loop)
-        data = os.read(rpipe, 1024)
+        data = self.loop.run_until_complete(self.loop.sock_recv(rsock, 1024))
         self.assertEqual(b'1', data)
 
-        os.close(rpipe)
+        rsock.close()
 
         self.loop.run_until_complete(proto.done)
         self.assertEqual('CLOSED', proto.state)
@@ -960,8 +962,23 @@ class EventLoopTestsMixin:
         r.close()
         w.close()
 
-    @unittest.skipIf(sys.platform == 'win32',
-                     "Don't support subprocess for Windows yet")
+
+class SubprocessTestsMixin:
+
+    def check_terminated(self, returncode):
+        if sys.platform == 'win32':
+            self.assertIsInstance(returncode, int)
+            self.assertNotEqual(0, returncode)
+        else:
+            self.assertEqual(-signal.SIGTERM, returncode)
+
+    def check_killed(self, returncode):
+        if sys.platform == 'win32':
+            self.assertIsInstance(returncode, int)
+            self.assertNotEqual(0, returncode)
+        else:
+            self.assertEqual(-signal.SIGKILL, returncode)
+
     def test_subprocess_exec(self):
         proto = None
         transp = None
@@ -985,11 +1002,9 @@ class EventLoopTestsMixin:
         self.loop.run_until_complete(proto.got_data[1].wait())
         transp.close()
         self.loop.run_until_complete(proto.completed)
-        self.assertEqual(-signal.SIGTERM, proto.returncode)
+        self.check_terminated(proto.returncode)
         self.assertEqual(b'Python The Winner', proto.data[1])
 
-    @unittest.skipIf(sys.platform == 'win32',
-                     "Don't support subprocess for Windows yet")
     def test_subprocess_interactive(self):
         proto = None
         transp = None
@@ -1022,10 +1037,8 @@ class EventLoopTestsMixin:
             transp.close()
 
         self.loop.run_until_complete(proto.completed)
-        self.assertEqual(-signal.SIGTERM, proto.returncode)
+        self.check_terminated(proto.returncode)
 
-    @unittest.skipIf(sys.platform == 'win32',
-                     "Don't support subprocess for Windows yet")
     def test_subprocess_shell(self):
         proto = None
         transp = None
@@ -1035,7 +1048,7 @@ class EventLoopTestsMixin:
             nonlocal proto, transp
             transp, proto = yield from self.loop.subprocess_shell(
                 functools.partial(MySubprocessProtocol, self.loop),
-                'echo "Python"')
+                'echo Python')
             self.assertIsInstance(proto, MySubprocessProtocol)
 
         self.loop.run_until_complete(connect())
@@ -1045,10 +1058,9 @@ class EventLoopTestsMixin:
         self.loop.run_until_complete(proto.completed)
         self.assertEqual(0, proto.returncode)
         self.assertTrue(all(f.done() for f in proto.disconnects.values()))
-        self.assertEqual({1: b'Python\n', 2: b''}, proto.data)
+        self.assertEqual(proto.data[1].rstrip(b'\r\n'), b'Python')
+        self.assertEqual(proto.data[2], b'')
 
-    @unittest.skipIf(sys.platform == 'win32',
-                     "Don't support subprocess for Windows yet")
     def test_subprocess_exitcode(self):
         proto = None
 
@@ -1064,8 +1076,6 @@ class EventLoopTestsMixin:
         self.loop.run_until_complete(proto.completed)
         self.assertEqual(7, proto.returncode)
 
-    @unittest.skipIf(sys.platform == 'win32',
-                     "Don't support subprocess for Windows yet")
     def test_subprocess_close_after_finish(self):
         proto = None
         transp = None
@@ -1086,8 +1096,6 @@ class EventLoopTestsMixin:
         self.assertEqual(7, proto.returncode)
         self.assertIsNone(transp.close())
 
-    @unittest.skipIf(sys.platform == 'win32',
-                     "Don't support subprocess for Windows yet")
     def test_subprocess_kill(self):
         proto = None
         transp = None
@@ -1107,10 +1115,30 @@ class EventLoopTestsMixin:
 
         transp.kill()
         self.loop.run_until_complete(proto.completed)
-        self.assertEqual(-signal.SIGKILL, proto.returncode)
+        self.check_killed(proto.returncode)
 
-    @unittest.skipIf(sys.platform == 'win32',
-                     "Don't support subprocess for Windows yet")
+    def test_subprocess_terminate(self):
+        proto = None
+        transp = None
+
+        prog = os.path.join(os.path.dirname(__file__), 'echo.py')
+
+        @tasks.coroutine
+        def connect():
+            nonlocal proto, transp
+            transp, proto = yield from self.loop.subprocess_exec(
+                functools.partial(MySubprocessProtocol, self.loop),
+                sys.executable, prog)
+            self.assertIsInstance(proto, MySubprocessProtocol)
+
+        self.loop.run_until_complete(connect())
+        self.loop.run_until_complete(proto.connected)
+
+        transp.terminate()
+        self.loop.run_until_complete(proto.completed)
+        self.check_terminated(proto.returncode)
+
+    @unittest.skipIf(sys.platform == 'win32', "Don't have SIGHUP")
     def test_subprocess_send_signal(self):
         proto = None
         transp = None
@@ -1132,8 +1160,6 @@ class EventLoopTestsMixin:
         self.loop.run_until_complete(proto.completed)
         self.assertEqual(-signal.SIGHUP, proto.returncode)
 
-    @unittest.skipIf(sys.platform == 'win32',
-                     "Don't support subprocess for Windows yet")
     def test_subprocess_stderr(self):
         proto = None
         transp = None
@@ -1161,8 +1187,6 @@ class EventLoopTestsMixin:
         self.assertTrue(proto.data[2].startswith(b'ERR:test'), proto.data[2])
         self.assertEqual(0, proto.returncode)
 
-    @unittest.skipIf(sys.platform == 'win32',
-                     "Don't support subprocess for Windows yet")
     def test_subprocess_stderr_redirect_to_stdout(self):
         proto = None
         transp = None
@@ -1193,8 +1217,6 @@ class EventLoopTestsMixin:
         transp.close()
         self.assertEqual(0, proto.returncode)
 
-    @unittest.skipIf(sys.platform == 'win32',
-                     "Don't support subprocess for Windows yet")
     def test_subprocess_close_client_stream(self):
         proto = None
         transp = None
@@ -1222,11 +1244,35 @@ class EventLoopTestsMixin:
         self.loop.run_until_complete(proto.disconnects[1])
         stdin.write(b'xxx')
         self.loop.run_until_complete(proto.got_data[2].wait())
-        self.assertEqual(b'ERR:BrokenPipeError', proto.data[2])
-
+        if sys.platform != 'win32':
+            self.assertEqual(b'ERR:BrokenPipeError', proto.data[2])
+        else:
+            # After closing the read-end of a pipe, writing to the
+            # write-end using os.write() fails with errno==EINVAL and
+            # GetLastError()==ERROR_INVALID_NAME on Windows!?!  (Using
+            # WriteFile() we get ERROR_BROKEN_PIPE as expected.)
+            self.assertEqual(b'ERR:OSError', proto.data[2])
         transp.close()
         self.loop.run_until_complete(proto.completed)
-        self.assertEqual(-signal.SIGTERM, proto.returncode)
+        self.check_terminated(proto.returncode)
+
+    def test_subprocess_wait_no_same_group(self):
+        proto = None
+        transp = None
+
+        @tasks.coroutine
+        def connect():
+            nonlocal proto
+            # start the new process in a new session
+            transp, proto = yield from self.loop.subprocess_shell(
+                functools.partial(MySubprocessProtocol, self.loop),
+                'exit 7', stdin=None, stdout=None, stderr=None,
+                start_new_session=True)
+            self.assertIsInstance(proto, MySubprocessProtocol)
+
+        self.loop.run_until_complete(connect())
+        self.loop.run_until_complete(proto.completed)
+        self.assertEqual(7, proto.returncode)
 
 
 if sys.platform == 'win32':
@@ -1237,7 +1283,10 @@ if sys.platform == 'win32':
         def create_event_loop(self):
             return windows_events.SelectorEventLoop()
 
-    class ProactorEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
+
+    class ProactorEventLoopTests(EventLoopTestsMixin,
+                                 SubprocessTestsMixin,
+                                 unittest.TestCase):
 
         def create_event_loop(self):
             return windows_events.ProactorEventLoop()
@@ -1268,39 +1317,48 @@ else:
     from asyncio import unix_events
 
 #    if hasattr(selectors, 'KqueueSelector'):
-#        class KqueueEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
+#        class KqueueEventLoopTests(EventLoopTestsMixin,
+#                                   SubprocessTestsMixin,
+#                                   unittest.TestCase):
 #
 #            def create_event_loop(self):
 #                return unix_events.SelectorEventLoop(
 #                    selectors.KqueueSelector())
 #
 #    if hasattr(selectors, 'EpollSelector'):
-#        class EPollEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
+#        class EPollEventLoopTests(EventLoopTestsMixin,
+#                                  SubprocessTestsMixin,
+#                                  unittest.TestCase):
 #
 #            def create_event_loop(self):
 #                return unix_events.SelectorEventLoop(selectors.EpollSelector())
 #
 #    if hasattr(selectors, 'PollSelector'):
-#        class PollEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
+#        class PollEventLoopTests(EventLoopTestsMixin,
+#                                 SubprocessTestsMixin,
+#                                 unittest.TestCase):
 #
 #            def create_event_loop(self):
 #                return unix_events.SelectorEventLoop(selectors.PollSelector())
 #
 #    # Should always exist.
-#    class SelectEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
-#
-#        def create_event_loop(self):
-#            return unix_events.SelectorEventLoop(selectors.SelectSelector())
+#    class SelectEventLoopTests(EventLoopTestsMixin,
+#                               SubprocessTestsMixin,
+#                               unittest.TestCase):
 
     gbulb.BaseGLibEventLoop.init_class()
     GObject.threads_init()
 
-    class GLibEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
+    class GLibEventLoopTests(EventLoopTestsMixin,
+                             SubprocessTestsMixin,
+                             unittest.TestCase):
 
         def create_event_loop(self):
             return gbulb.GLibEventLoop(GLib.main_context_default())
 
-    class GtkEventLoopTests(EventLoopTestsMixin, unittest.TestCase):
+    class GtkEventLoopTests(EventLoopTestsMixin,
+                            SubprocessTestsMixin,
+                            unittest.TestCase):
 
         def create_event_loop(self):
             return gbulb.GtkEventLoop()
