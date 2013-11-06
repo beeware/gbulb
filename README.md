@@ -48,9 +48,6 @@ Apache 2.0
 
 ## Known issues
 
-- subprocesses can only be started from the default context (usually the one
-  used by the main thread)
-
 - windows is not supported, sorry
 
 ## Divergences with PEP 3156
