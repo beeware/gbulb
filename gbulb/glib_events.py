@@ -20,6 +20,62 @@ import weakref
 import collections
 import os
 
+class GLibChildWatcher(unix_events.AbstractChildWatcher):
+    def __init__(self, loop):
+        self._sources = {}
+
+    def set_loop(self, loop):
+        # just ignored
+        pass
+
+    def add_child_handler(self, pid, callback, *args):
+        self.remove_child_handler(pid)
+
+        source = GLib.child_watch_add(0, pid, self._glib_callback)
+        self._sources[pid] = source, callback, args
+
+    def remove_child_handler(self, pid):
+        try:
+            source = self._sources.pop(pid)[0]
+        except KeyError:
+            return False
+
+        GLib.source_remove(source)
+        return True
+
+    def close(self):
+        for source, callback, args in self._sources.values():
+            GLib.source_remove(source)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, a, b, c):
+        pass
+
+    def _glib_callback(self, pid, status):
+
+        try:
+            source, callback, args = self._sources.pop(pid)
+        except KeyError:
+            return
+
+        GLib.source_remove(source)
+
+        if os.WIFSIGNALED(status):
+            returncode = -os.WTERMSIG(status)
+        elif os.WIFEXITED(status):
+            returncode = os.WEXITSTATUS(status)
+
+            #FIXME: Hack for adjusting invalid status returned by GLIB
+            #	Looks like there is a bug in glib or in pygobject
+            if returncode > 128:
+                returncode = 128 - returncode
+        else:
+            returncode = status
+
+        callback(pid, returncode, *args)
+
 
 class GLibHandle(events.Handle):
     def __init__(self, loop, source, repeat, callback, args):
@@ -52,44 +108,6 @@ class GLibHandle(events.Handle):
         if not self._repeat:
             self._loop._handlers.discard(self)
         return self._repeat
-
-
-class GLibChildHandle(events.Handle):
-    def __init__(self, loop, pid, callback, args):
-
-        if loop._context != GLib.main_context_default():
-            raise RuntimeError("Children processes cannot be monitored outside the main event loop")
-        super().__init__(callback, args)
-
-        self._loop   = loop
-        self._source = GLib.child_watch_add(0, pid, self.__class__._callback, self)
-        loop._handlers.add(self)
-
-    def cancel(self):
-        super().cancel()
-        GLib.source_remove(self._source)
-        self._loop._handlers.discard(self)
-
-    @staticmethod
-    def _callback(pid, status, self):
-
-        if os.WIFSIGNALED(status):
-            returncode = -os.WTERMSIG(status)
-        elif os.WIFEXITED(status):
-            returncode = os.WEXITSTATUS(status)
-
-            #FIXME: Hack for adjusting invalid status returned by GLIB
-            #	Looks like there is a bug in glib or in pygobject
-            if returncode > 128:
-                returncode = 128 - returncode
-        else:
-            returncode = None
-
-        self._args += returncode,
-
-        self._loop._ready.append(self)
-        self._loop._dispatch()
-
 
 #
 # Divergences with PEP 3156
@@ -508,20 +526,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         self._check_signal(sig)
         try:
             self._sighandlers.pop(sig).cancel()
-            return True
-
-        except KeyError:
-            return False
-
-    def _add_child_handler(self, pid, callback, *args):
-        self._remove_child_handler(pid)
-
-        assert pid not in self._chldhandlers
-        self._chldhandlers[pid] = GLibChildHandle(self, pid, callback, args)
-
-    def _remove_child_handler(self, pid):
-        try:
-            self._chldhandlers.pop(pid).cancel()
             return True
 
         except KeyError:

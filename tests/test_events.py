@@ -1315,34 +1315,15 @@ else:
     from asyncio import selectors
     from asyncio import unix_events
 
-    gbulb.BaseGLibEventLoop.init_class()
-    GObject.threads_init()
+    class UnixEventLoopTestsMixin(EventLoopTestsMixin):
+        def setUp(self):
+            super().setUp()
+            events.set_child_watcher(gbulb.GLibChildWatcher(self.loop))
 
-    class GLibEventLoopTests(EventLoopTestsMixin,
-                             SubprocessTestsMixin,
-                             unittest.TestCase):
+        def tearDown(self):
+            events.set_child_watcher(None)
+            super().tearDown()
 
-        def create_event_loop(self):
-            return gbulb.GLibEventLoop(GLib.main_context_default())
-
-    if gbulb.Gtk:  
-        class GtkEventLoopTests(EventLoopTestsMixin,
-                                SubprocessTestsMixin,
-                                unittest.TestCase):
-
-            def create_event_loop(self):
-                return gbulb.GtkEventLoop()
-
-
-#    class UnixEventLoopTestsMixin(EventLoopTestsMixin):
-#        def setUp(self):
-#            super().setUp()
-#            events.set_child_watcher(unix_events.SafeChildWatcher(self.loop))
-#
-#        def tearDown(self):
-#            events.set_child_watcher(None)
-#            super().tearDown()
-#
 #    if hasattr(selectors, 'KqueueSelector'):
 #        class KqueueEventLoopTests(UnixEventLoopTestsMixin,
 #                                   SubprocessTestsMixin,
@@ -1371,6 +1352,24 @@ else:
 #
 #        def create_event_loop(self):
 #            return unix_events.SelectorEventLoop(selectors.SelectSelector())
+
+    gbulb.BaseGLibEventLoop.init_class()
+    GObject.threads_init()
+
+    class GLibEventLoopTests(UnixEventLoopTestsMixin,
+                             SubprocessTestsMixin,
+                             unittest.TestCase):
+
+        def create_event_loop(self):
+            return gbulb.GLibEventLoop(GLib.main_context_default())
+
+    if gbulb.Gtk:  
+        class GtkEventLoopTests(UnixEventLoopTestsMixin,
+                                SubprocessTestsMixin,
+                                unittest.TestCase):
+
+            def create_event_loop(self):
+                return gbulb.GtkEventLoop()
 
 
 class HandleTests(unittest.TestCase):
