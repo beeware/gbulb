@@ -736,11 +736,14 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
 
         self._default_loop = None
 
-        self._policy  = events.DefaultEventLoopPolicy()
+        self._policy  = unix_events.DefaultEventLoopPolicy()
         self._policy.new_event_loop = self.new_event_loop
 
         self.get_event_loop = self._policy.get_event_loop
         self.set_event_loop = self._policy.set_event_loop
+        self.get_child_watcher = self._policy.get_child_watcher
+
+        self._policy.set_child_watcher(GLibChildWatcher(None))
 
         BaseGLibEventLoop.init_class()
 
@@ -761,7 +764,7 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         elif self._full:
             l = GLibEventLoop()
         else:
-            l = events.DefaultEventLoopPolicy.new_event_loop(self._policy)
+            l = unix_events.DefaultEventLoopPolicy.new_event_loop(self._policy)
 
         return l
 

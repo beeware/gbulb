@@ -20,7 +20,7 @@ from asyncio import tasks
 from asyncio import transports
 from asyncio.log import logger
 
-from asyncio.unix_events import AbstractChildWatcher
+from asyncio.unix_events import AbstractChildWatcher, DefaultEventLoopPolicy
 
 __all__ = ['SelectorEventLoop', 'STDIN', 'STDOUT', 'STDERR',
            'AbstractChildWatcher', 'SafeChildWatcher',
@@ -669,58 +669,58 @@ class _UnixSubprocessTransport(base_subprocess.BaseSubprocessTransport):
 #                    "%d -> %d", pid, returncode)
 #            else:
 #                callback(pid, returncode, *args)
-
-
-class _UnixDefaultEventLoopPolicy(events.BaseDefaultEventLoopPolicy):
-    """XXX"""
-    _loop_factory = _UnixSelectorEventLoop
-
-    def __init__(self):
-        super().__init__()
-        self._watcher = None
-
-    def _init_watcher(self):
-        with events._lock:
-            if self._watcher is None:  # pragma: no branch
-                if isinstance(threading.current_thread(),
-                              threading._MainThread):
-                    self._watcher = SafeChildWatcher(self._local._loop)
-                else:
-                    self._watcher = SafeChildWatcher(None)
-
-    def set_event_loop(self, loop):
-        """Set the event loop.
-
-        As a side effect, if a child watcher was set before, then calling
-        .set_event_loop() from the main thread will call .set_loop(loop) on the
-        child watcher.
-        """
-
-        super().set_event_loop(loop)
-
-        if self._watcher is not None and \
-            isinstance(threading.current_thread(), threading._MainThread):
-            self._watcher.set_loop(loop)
-
-    def get_child_watcher(self):
-        """Get the child watcher
-
-        If not yet set, a SafeChildWatcher object is automatically created.
-        """
-        if self._watcher is None:
-            self._init_watcher()
-
-        return self._watcher
-
-    def set_child_watcher(self, watcher):
-        """Set the child watcher"""
-
-        assert watcher is None or isinstance(watcher, AbstractChildWatcher)
-
-        if self._watcher is not None:
-            self._watcher.close()
-
-        self._watcher = watcher
+#
+#
+#class _UnixDefaultEventLoopPolicy(events.BaseDefaultEventLoopPolicy):
+#    """XXX"""
+#    _loop_factory = _UnixSelectorEventLoop
+#
+#    def __init__(self):
+#        super().__init__()
+#        self._watcher = None
+#
+#    def _init_watcher(self):
+#        with events._lock:
+#            if self._watcher is None:  # pragma: no branch
+#                if isinstance(threading.current_thread(),
+#                              threading._MainThread):
+#                    self._watcher = SafeChildWatcher(self._local._loop)
+#                else:
+#                    self._watcher = SafeChildWatcher(None)
+#
+#    def set_event_loop(self, loop):
+#        """Set the event loop.
+#
+#        As a side effect, if a child watcher was set before, then calling
+#        .set_event_loop() from the main thread will call .set_loop(loop) on the
+#        child watcher.
+#        """
+#
+#        super().set_event_loop(loop)
+#
+#        if self._watcher is not None and \
+#            isinstance(threading.current_thread(), threading._MainThread):
+#            self._watcher.set_loop(loop)
+#
+#    def get_child_watcher(self):
+#        """Get the child watcher
+#
+#        If not yet set, a SafeChildWatcher object is automatically created.
+#        """
+#        if self._watcher is None:
+#            self._init_watcher()
+#
+#        return self._watcher
+#
+#    def set_child_watcher(self, watcher):
+#        """Set the child watcher"""
+#
+#        assert watcher is None or isinstance(watcher, AbstractChildWatcher)
+#
+#        if self._watcher is not None:
+#            self._watcher.close()
+#
+#        self._watcher = watcher
 
 SelectorEventLoop = _UnixSelectorEventLoop
-DefaultEventLoopPolicy = _UnixDefaultEventLoopPolicy
+#DefaultEventLoopPolicy = _UnixDefaultEventLoopPolicy
