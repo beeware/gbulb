@@ -1489,7 +1489,7 @@ else:
                                 unittest.TestCase):
 
             def create_event_loop(self):
-                return gbulb.GtkEventLoop()
+                return gbulb.GLibEventLoop(gtk=True)
 
 
 class HandleTests(unittest.TestCase):
