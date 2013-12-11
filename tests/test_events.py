@@ -17,7 +17,7 @@ import time
 import errno
 import unittest
 import unittest.mock
-from test.support import find_unused_port, IPV6_ENABLED
+from test import support  # find_unused_port, IPV6_ENABLED, TEST_HOME_DIR
 
 
 from asyncio import futures
@@ -30,10 +30,27 @@ from asyncio import test_utils
 from asyncio import locks
 
 
+def data_file(filename):
+    if hasattr(support, 'TEST_HOME_DIR'):
+        fullname = os.path.join(support.TEST_HOME_DIR, filename)
+        if os.path.isfile(fullname):
+            return fullname
+    fullname = os.path.join(os.path.dirname(__file__), filename)
+    if os.path.isfile(fullname):
+        return fullname
+    raise FileNotFoundError(filename)
+
+ONLYCERT = data_file('ssl_cert.pem')
+ONLYKEY = data_file('ssl_key.pem')
+SIGNED_CERTFILE = data_file('keycert3.pem')
+SIGNING_CA = data_file('pycacert.pem')
+
+
 class MyProto(protocols.Protocol):
     done = None
 
     def __init__(self, loop=None):
+        self.transport = None
         self.state = 'INITIAL'
         self.nbytes = 0
         if loop is not None:
@@ -78,7 +95,7 @@ class MyDatagramProto(protocols.DatagramProtocol):
         assert self.state == 'INITIALIZED', self.state
         self.nbytes += len(data)
 
-    def connection_refused(self, exc):
+    def error_received(self, exc):
         assert self.state == 'INITIALIZED', self.state
 
     def connection_lost(self, exc):
@@ -472,8 +489,8 @@ class EventLoopTestsMixin:
             f = self.loop.create_connection(
                 lambda: MyProto(loop=self.loop), *httpd.address)
             tr, pr = self.loop.run_until_complete(f)
-            self.assertTrue(isinstance(tr, transports.Transport))
-            self.assertTrue(isinstance(pr, protocols.Protocol))
+            self.assertIsInstance(tr, transports.Transport)
+            self.assertIsInstance(pr, protocols.Protocol)
             self.loop.run_until_complete(pr.done)
             self.assertGreater(pr.nbytes, 0)
             tr.close()
@@ -500,8 +517,8 @@ class EventLoopTestsMixin:
             f = self.loop.create_connection(
                 lambda: MyProto(loop=self.loop), sock=sock)
             tr, pr = self.loop.run_until_complete(f)
-            self.assertTrue(isinstance(tr, transports.Transport))
-            self.assertTrue(isinstance(pr, protocols.Protocol))
+            self.assertIsInstance(tr, transports.Transport)
+            self.assertIsInstance(pr, protocols.Protocol)
             self.loop.run_until_complete(pr.done)
             self.assertGreater(pr.nbytes, 0)
             tr.close()
@@ -513,8 +530,8 @@ class EventLoopTestsMixin:
                 lambda: MyProto(loop=self.loop), *httpd.address,
                 ssl=test_utils.dummy_ssl_context())
             tr, pr = self.loop.run_until_complete(f)
-            self.assertTrue(isinstance(tr, transports.Transport))
-            self.assertTrue(isinstance(pr, protocols.Protocol))
+            self.assertIsInstance(tr, transports.Transport)
+            self.assertIsInstance(pr, protocols.Protocol)
             self.assertTrue('ssl' in tr.__class__.__name__.lower())
             self.assertIsNotNone(tr.get_extra_info('sockname'))
             self.loop.run_until_complete(pr.done)
@@ -523,7 +540,7 @@ class EventLoopTestsMixin:
 
     def test_create_connection_local_addr(self):
         with test_utils.run_test_server() as httpd:
-            port = find_unused_port()
+            port = support.find_unused_port()
             f = self.loop.create_connection(
                 lambda: MyProto(loop=self.loop),
                 *httpd.address, local_addr=(httpd.address[0], port))
@@ -560,6 +577,7 @@ class EventLoopTestsMixin:
         client.connect(('127.0.0.1', port))
         client.sendall(b'xxx')
         test_utils.run_briefly(self.loop)
+        test_utils.run_until(self.loop, lambda: proto is not None, 10)
         self.assertIsInstance(proto, MyProto)
         self.assertEqual('INITIAL', proto.state)
         test_utils.run_briefly(self.loop)
@@ -586,6 +604,20 @@ class EventLoopTestsMixin:
         # close server
         server.close()
 
+    def _make_ssl_server(self, factory, certfile, keyfile=None):
+        sslcontext = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        sslcontext.options |= ssl.OP_NO_SSLv2
+        sslcontext.load_cert_chain(certfile, keyfile)
+
+        f = self.loop.create_server(
+            factory, '127.0.0.1', 0, ssl=sslcontext)
+
+        server = self.loop.run_until_complete(f)
+        sock = server.sockets[0]
+        host, port = sock.getsockname()
+        self.assertEqual(host, '127.0.0.1')
+        return server, host, port
+
     @unittest.skipIf(ssl is None, 'No ssl module')
     def test_create_server_ssl(self):
         proto = None
@@ -601,19 +633,7 @@ class EventLoopTestsMixin:
             proto = MyProto(loop=self.loop)
             return proto
 
-        here = os.path.dirname(__file__)
-        sslcontext = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-        sslcontext.load_cert_chain(
-            certfile=os.path.join(here, 'sample.crt'),
-            keyfile=os.path.join(here, 'sample.key'))
-
-        f = self.loop.create_server(
-            factory, '127.0.0.1', 0, ssl=sslcontext)
-
-        server = self.loop.run_until_complete(f)
-        sock = server.sockets[0]
-        host, port = sock.getsockname()
-        self.assertEqual(host, '127.0.0.1')
+        server, host, port = self._make_ssl_server(factory, ONLYCERT, ONLYKEY)
 
         f_c = self.loop.create_connection(ClientMyProto, host, port,
                                           ssl=test_utils.dummy_ssl_context())
@@ -643,6 +663,93 @@ class EventLoopTestsMixin:
         client.close()
 
         # stop serving
+        server.close()
+
+    @unittest.skipIf(ssl is None, 'No ssl module')
+    def test_create_server_ssl_verify_failed(self):
+        proto = None
+
+        def factory():
+            nonlocal proto
+            proto = MyProto(loop=self.loop)
+            return proto
+
+        server, host, port = self._make_ssl_server(factory, SIGNED_CERTFILE)
+
+        sslcontext_client = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        sslcontext_client.options |= ssl.OP_NO_SSLv2
+        sslcontext_client.verify_mode = ssl.CERT_REQUIRED
+        if hasattr(sslcontext_client, 'check_hostname'):
+            sslcontext_client.check_hostname = True
+
+        # no CA loaded
+        f_c = self.loop.create_connection(MyProto, host, port,
+                                          ssl=sslcontext_client)
+        with self.assertRaisesRegex(ssl.SSLError,
+                                    'certificate verify failed '):
+            self.loop.run_until_complete(f_c)
+
+        # close connection
+        self.assertIsNone(proto.transport)
+        server.close()
+
+    @unittest.skipIf(ssl is None, 'No ssl module')
+    def test_create_server_ssl_match_failed(self):
+        proto = None
+
+        def factory():
+            nonlocal proto
+            proto = MyProto(loop=self.loop)
+            return proto
+
+        server, host, port = self._make_ssl_server(factory, SIGNED_CERTFILE)
+
+        sslcontext_client = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        sslcontext_client.options |= ssl.OP_NO_SSLv2
+        sslcontext_client.verify_mode = ssl.CERT_REQUIRED
+        sslcontext_client.load_verify_locations(
+            cafile=SIGNING_CA)
+        if hasattr(sslcontext_client, 'check_hostname'):
+            sslcontext_client.check_hostname = True
+
+        # incorrect server_hostname
+        f_c = self.loop.create_connection(MyProto, host, port,
+                                          ssl=sslcontext_client)
+        with self.assertRaisesRegex(ssl.CertificateError,
+                "hostname '127.0.0.1' doesn't match 'localhost'"):
+            self.loop.run_until_complete(f_c)
+
+        # close connection
+        proto.transport.close()
+        server.close()
+
+    @unittest.skipIf(ssl is None, 'No ssl module')
+    def test_create_server_ssl_verified(self):
+        proto = None
+
+        def factory():
+            nonlocal proto
+            proto = MyProto(loop=self.loop)
+            return proto
+
+        server, host, port = self._make_ssl_server(factory, SIGNED_CERTFILE)
+
+        sslcontext_client = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        sslcontext_client.options |= ssl.OP_NO_SSLv2
+        sslcontext_client.verify_mode = ssl.CERT_REQUIRED
+        sslcontext_client.load_verify_locations(cafile=SIGNING_CA)
+        if hasattr(sslcontext_client, 'check_hostname'):
+            sslcontext_client.check_hostname = True
+
+        # Connection succeeds with correct CA and server hostname.
+        f_c = self.loop.create_connection(MyProto, host, port,
+                                          ssl=sslcontext_client,
+                                          server_hostname='localhost')
+        client, pr = self.loop.run_until_complete(f_c)
+
+        # close connection
+        proto.transport.close()
+        client.close()
         server.close()
 
     def test_create_server_sock(self):
@@ -687,7 +794,7 @@ class EventLoopTestsMixin:
 
         server.close()
 
-    @unittest.skipUnless(IPV6_ENABLED, 'IPv6 not supported or enabled')
+    @unittest.skipUnless(support.IPV6_ENABLED, 'IPv6 not supported or enabled')
     def test_create_server_dual_stack(self):
         f_proto = futures.Future(loop=self.loop)
 
@@ -699,7 +806,7 @@ class EventLoopTestsMixin:
         try_count = 0
         while True:
             try:
-                port = find_unused_port()
+                port = support.find_unused_port()
                 f = self.loop.create_server(TestMyProto, host=None, port=port)
                 server = self.loop.run_until_complete(f)
             except OSError as ex:
@@ -896,7 +1003,7 @@ class EventLoopTestsMixin:
             proto = MyWritePipeProto(loop=self.loop)
             return proto
 
-        rsock, wsock = self.loop._socketpair()
+        rsock, wsock = test_utils.socketpair()
         pipeobj = io.open(wsock.detach(), 'wb', 1024)
 
         @tasks.coroutine
@@ -926,7 +1033,8 @@ class EventLoopTestsMixin:
         r.setblocking(False)
         f = self.loop.sock_recv(r, 1)
         ov = getattr(f, 'ov', None)
-        self.assertTrue(ov is None or ov.pending)
+        if ov is not None:
+            self.assertTrue(ov.pending)
 
         @tasks.coroutine
         def main():
@@ -949,7 +1057,8 @@ class EventLoopTestsMixin:
         self.assertLess(elapsed, 0.1)
         self.assertEqual(t.result(), 'cancelled')
         self.assertRaises(futures.CancelledError, f.result)
-        self.assertTrue(ov is None or not ov.pending)
+        if ov is not None:
+            self.assertFalse(ov.pending)
         self.loop._stop_serving(r)
 
         r.close()
@@ -1284,10 +1393,19 @@ if sys.platform == 'win32':
             return windows_events.ProactorEventLoop()
 
         def test_create_ssl_connection(self):
-            raise unittest.SkipTest("IocpEventLoop imcompatible with SSL")
+            raise unittest.SkipTest("IocpEventLoop incompatible with SSL")
 
         def test_create_server_ssl(self):
-            raise unittest.SkipTest("IocpEventLoop imcompatible with SSL")
+            raise unittest.SkipTest("IocpEventLoop incompatible with SSL")
+
+        def test_create_server_ssl_verify_failed(self):
+            raise unittest.SkipTest("IocpEventLoop incompatible with SSL")
+
+        def test_create_server_ssl_match_failed(self):
+            raise unittest.SkipTest("IocpEventLoop incompatible with SSL")
+
+        def test_create_server_ssl_verified(self):
+            raise unittest.SkipTest("IocpEventLoop incompatible with SSL")
 
         def test_reader_callback(self):
             raise unittest.SkipTest("IocpEventLoop does not have add_reader()")
@@ -1311,7 +1429,9 @@ else:
     class UnixEventLoopTestsMixin(EventLoopTestsMixin):
         def setUp(self):
             super().setUp()
-            events.set_child_watcher(unix_events.SafeChildWatcher(self.loop))
+            watcher = unix_events.SafeChildWatcher()
+            watcher.attach_loop(self.loop)
+            events.set_child_watcher(watcher)
 
         def tearDown(self):
             events.set_child_watcher(None)
@@ -1553,7 +1673,7 @@ class ProtocolsAbsTests(unittest.TestCase):
         dp = protocols.DatagramProtocol()
         self.assertIsNone(dp.connection_made(f))
         self.assertIsNone(dp.connection_lost(f))
-        self.assertIsNone(dp.connection_refused(f))
+        self.assertIsNone(dp.error_received(f))
         self.assertIsNone(dp.datagram_received(f, f))
 
         sp = protocols.SubprocessProtocol()
@@ -1592,6 +1712,22 @@ class PolicyTests(unittest.TestCase):
 
         self.assertIs(policy._local._loop, loop)
         self.assertIs(loop, policy.get_event_loop())
+        loop.close()
+
+    def test_get_event_loop_calls_set_event_loop(self):
+        policy = self.create_policy()
+
+        with unittest.mock.patch.object(
+                policy, "set_event_loop",
+                wraps=policy.set_event_loop) as m_set_event_loop:
+
+            loop = policy.get_event_loop()
+
+            # policy._local._loop must be set through .set_event_loop()
+            # (the unix DefaultEventLoopPolicy needs this call to attach
+            # the child watcher correctly)
+            m_set_event_loop.assert_called_with(loop)
+
         loop.close()
 
     def test_get_event_loop_after_set_none(self):

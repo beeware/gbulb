@@ -1,5 +1,6 @@
 """Tests for unix_events.py."""
 
+import collections
 import gc
 import errno
 import io
@@ -67,7 +68,7 @@ class SelectorEventLoopTests(unittest.TestCase):
         cb = lambda: True
         self.loop.add_signal_handler(signal.SIGHUP, cb)
         h = self.loop._signal_handlers.get(signal.SIGHUP)
-        self.assertTrue(isinstance(h, events.Handle))
+        self.assertIsInstance(h, events.Handle)
         self.assertEqual(h._callback, cb)
 
     @unittest.mock.patch('asyncio.unix_events.signal')
@@ -182,6 +183,22 @@ class SelectorEventLoopTests(unittest.TestCase):
 
         self.assertRaises(
             RuntimeError, self.loop.remove_signal_handler, signal.SIGHUP)
+
+    @unittest.mock.patch('asyncio.unix_events.signal')
+    def test_close(self, m_signal):
+        m_signal.NSIG = signal.NSIG
+
+        self.loop.add_signal_handler(signal.SIGHUP, lambda: True)
+        self.loop.add_signal_handler(signal.SIGCHLD, lambda: True)
+
+        self.assertEqual(len(self.loop._signal_handlers), 2)
+
+        m_signal.set_wakeup_fd.reset_mock()
+
+        self.loop.close()
+
+        self.assertEqual(len(self.loop._signal_handlers), 0)
+        m_signal.set_wakeup_fd.assert_called_once_with(-1)
 
 
 class UnixReadPipeTransportTests(unittest.TestCase):
@@ -362,7 +379,7 @@ class UnixWritePipeTransportTests(unittest.TestCase):
         fstat_patcher = unittest.mock.patch('os.fstat')
         m_fstat = fstat_patcher.start()
         st = unittest.mock.Mock()
-        st.st_mode = stat.S_IFIFO
+        st.st_mode = stat.S_IFSOCK
         m_fstat.return_value = st
         self.addCleanup(fstat_patcher.stop)
 
@@ -671,7 +688,7 @@ class AbstractChildWatcherTests(unittest.TestCase):
         self.assertRaises(
             NotImplementedError, watcher.remove_child_handler, f)
         self.assertRaises(
-            NotImplementedError, watcher.set_loop, f)
+            NotImplementedError, watcher.attach_loop, f)
         self.assertRaises(
             NotImplementedError, watcher.close)
         self.assertRaises(
@@ -684,13 +701,21 @@ class BaseChildWatcherTests(unittest.TestCase):
 
     def test_not_implemented(self):
         f = unittest.mock.Mock()
-        watcher = unix_events.BaseChildWatcher(None)
+        watcher = unix_events.BaseChildWatcher()
         self.assertRaises(
             NotImplementedError, watcher._do_waitpid, f)
 
 
+WaitPidMocks = collections.namedtuple("WaitPidMocks",
+                                      ("waitpid",
+                                       "WIFEXITED",
+                                       "WIFSIGNALED",
+                                       "WEXITSTATUS",
+                                       "WTERMSIG",
+                                       ))
+
+
 class ChildWatcherTestsMixin:
-    instance = None
 
     ignore_warnings = unittest.mock.patch.object(unix_events.logger, "warning")
 
@@ -699,18 +724,12 @@ class ChildWatcherTestsMixin:
         self.running = False
         self.zombies = {}
 
-        assert ChildWatcherTestsMixin.instance is None
-        ChildWatcherTestsMixin.instance = self
-
         with unittest.mock.patch.object(
                 self.loop, "add_signal_handler") as self.m_add_signal_handler:
-            self.watcher = self.create_watcher(self.loop)
+            self.watcher = self.create_watcher()
+            self.watcher.attach_loop(self.loop)
 
-    def tearDown(self):
-        ChildWatcherTestsMixin.instance = None
-
-    def waitpid(pid, flags):
-        self = ChildWatcherTestsMixin.instance
+    def waitpid(self, pid, flags):
         if isinstance(self.watcher, unix_events.SafeChildWatcher) or pid != -1:
             self.assertGreater(pid, 0)
         try:
@@ -728,33 +747,43 @@ class ChildWatcherTestsMixin:
     def add_zombie(self, pid, returncode):
         self.zombies[pid] = returncode + 32768
 
-    def WIFEXITED(status):
+    def WIFEXITED(self, status):
         return status >= 32768
 
-    def WIFSIGNALED(status):
+    def WIFSIGNALED(self, status):
         return 32700 < status < 32768
 
-    def WEXITSTATUS(status):
-        self = ChildWatcherTestsMixin.instance
-        self.assertTrue(type(self).WIFEXITED(status))
+    def WEXITSTATUS(self, status):
+        self.assertTrue(self.WIFEXITED(status))
         return status - 32768
 
-    def WTERMSIG(status):
-        self = ChildWatcherTestsMixin.instance
-        self.assertTrue(type(self).WIFSIGNALED(status))
+    def WTERMSIG(self, status):
+        self.assertTrue(self.WIFSIGNALED(status))
         return 32768 - status
 
     def test_create_watcher(self):
         self.m_add_signal_handler.assert_called_once_with(
             signal.SIGCHLD, self.watcher._sig_chld)
 
-    @unittest.mock.patch('os.WTERMSIG', wraps=WTERMSIG)
-    @unittest.mock.patch('os.WEXITSTATUS', wraps=WEXITSTATUS)
-    @unittest.mock.patch('os.WIFSIGNALED', wraps=WIFSIGNALED)
-    @unittest.mock.patch('os.WIFEXITED', wraps=WIFEXITED)
-    @unittest.mock.patch('os.waitpid', wraps=waitpid)
-    def test_sigchld(self, m_waitpid, m_WIFEXITED, m_WIFSIGNALED,
-                           m_WEXITSTATUS, m_WTERMSIG):
+    def waitpid_mocks(func):
+        def wrapped_func(self):
+            def patch(target, wrapper):
+                return unittest.mock.patch(target, wraps=wrapper,
+                                           new_callable=unittest.mock.Mock)
+
+            with patch('os.WTERMSIG', self.WTERMSIG) as m_WTERMSIG, \
+                 patch('os.WEXITSTATUS', self.WEXITSTATUS) as m_WEXITSTATUS, \
+                 patch('os.WIFSIGNALED', self.WIFSIGNALED) as m_WIFSIGNALED, \
+                 patch('os.WIFEXITED', self.WIFEXITED) as m_WIFEXITED, \
+                 patch('os.waitpid', self.waitpid) as m_waitpid:
+                func(self, WaitPidMocks(m_waitpid,
+                                        m_WIFEXITED, m_WIFSIGNALED,
+                                        m_WEXITSTATUS, m_WTERMSIG,
+                                        ))
+        return wrapped_func
+
+    @waitpid_mocks
+    def test_sigchld(self, m):
         # register a child
         callback = unittest.mock.Mock()
 
@@ -763,33 +792,33 @@ class ChildWatcherTestsMixin:
             self.watcher.add_child_handler(42, callback, 9, 10, 14)
 
         self.assertFalse(callback.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
         # child is running
         self.watcher._sig_chld()
 
         self.assertFalse(callback.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
         # child terminates (returncode 12)
         self.running = False
         self.add_zombie(42, 12)
         self.watcher._sig_chld()
 
-        self.assertTrue(m_WIFEXITED.called)
-        self.assertTrue(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertTrue(m.WIFEXITED.called)
+        self.assertTrue(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
         callback.assert_called_once_with(42, 12, 9, 10, 14)
 
-        m_WIFSIGNALED.reset_mock()
-        m_WIFEXITED.reset_mock()
-        m_WEXITSTATUS.reset_mock()
+        m.WIFSIGNALED.reset_mock()
+        m.WIFEXITED.reset_mock()
+        m.WEXITSTATUS.reset_mock()
         callback.reset_mock()
 
         # ensure that the child is effectively reaped
@@ -798,29 +827,24 @@ class ChildWatcherTestsMixin:
             self.watcher._sig_chld()
 
         self.assertFalse(callback.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WTERMSIG.called)
 
-        m_WIFSIGNALED.reset_mock()
-        m_WIFEXITED.reset_mock()
-        m_WEXITSTATUS.reset_mock()
+        m.WIFSIGNALED.reset_mock()
+        m.WIFEXITED.reset_mock()
+        m.WEXITSTATUS.reset_mock()
 
         # sigchld called again
         self.zombies.clear()
         self.watcher._sig_chld()
 
         self.assertFalse(callback.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
-    @unittest.mock.patch('os.WTERMSIG', wraps=WTERMSIG)
-    @unittest.mock.patch('os.WEXITSTATUS', wraps=WEXITSTATUS)
-    @unittest.mock.patch('os.WIFSIGNALED', wraps=WIFSIGNALED)
-    @unittest.mock.patch('os.WIFEXITED', wraps=WIFEXITED)
-    @unittest.mock.patch('os.waitpid', wraps=waitpid)
-    def test_sigchld_two_children(self, m_waitpid, m_WIFEXITED, m_WIFSIGNALED,
-                                        m_WEXITSTATUS, m_WTERMSIG):
+    @waitpid_mocks
+    def test_sigchld_two_children(self, m):
         callback1 = unittest.mock.Mock()
         callback2 = unittest.mock.Mock()
 
@@ -831,10 +855,10 @@ class ChildWatcherTestsMixin:
 
         self.assertFalse(callback1.called)
         self.assertFalse(callback2.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
         # register child 2
         with self.watcher:
@@ -842,20 +866,20 @@ class ChildWatcherTestsMixin:
 
         self.assertFalse(callback1.called)
         self.assertFalse(callback2.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
         # childen are running
         self.watcher._sig_chld()
 
         self.assertFalse(callback1.called)
         self.assertFalse(callback2.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
         # child 1 terminates (signal 3)
         self.add_zombie(43, -3)
@@ -863,13 +887,13 @@ class ChildWatcherTestsMixin:
 
         callback1.assert_called_once_with(43, -3, 7, 8)
         self.assertFalse(callback2.called)
-        self.assertTrue(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertTrue(m_WTERMSIG.called)
+        self.assertTrue(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertTrue(m.WTERMSIG.called)
 
-        m_WIFSIGNALED.reset_mock()
-        m_WIFEXITED.reset_mock()
-        m_WTERMSIG.reset_mock()
+        m.WIFSIGNALED.reset_mock()
+        m.WIFEXITED.reset_mock()
+        m.WTERMSIG.reset_mock()
         callback1.reset_mock()
 
         # child 2 still running
@@ -877,10 +901,10 @@ class ChildWatcherTestsMixin:
 
         self.assertFalse(callback1.called)
         self.assertFalse(callback2.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
         # child 2 terminates (code 108)
         self.add_zombie(44, 108)
@@ -889,13 +913,13 @@ class ChildWatcherTestsMixin:
 
         callback2.assert_called_once_with(44, 108, 147, 18)
         self.assertFalse(callback1.called)
-        self.assertTrue(m_WIFEXITED.called)
-        self.assertTrue(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertTrue(m.WIFEXITED.called)
+        self.assertTrue(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
-        m_WIFSIGNALED.reset_mock()
-        m_WIFEXITED.reset_mock()
-        m_WEXITSTATUS.reset_mock()
+        m.WIFSIGNALED.reset_mock()
+        m.WIFEXITED.reset_mock()
+        m.WEXITSTATUS.reset_mock()
         callback2.reset_mock()
 
         # ensure that the children are effectively reaped
@@ -906,11 +930,11 @@ class ChildWatcherTestsMixin:
 
         self.assertFalse(callback1.called)
         self.assertFalse(callback2.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WTERMSIG.called)
 
-        m_WIFSIGNALED.reset_mock()
-        m_WIFEXITED.reset_mock()
-        m_WEXITSTATUS.reset_mock()
+        m.WIFSIGNALED.reset_mock()
+        m.WIFEXITED.reset_mock()
+        m.WEXITSTATUS.reset_mock()
 
         # sigchld called again
         self.zombies.clear()
@@ -918,19 +942,13 @@ class ChildWatcherTestsMixin:
 
         self.assertFalse(callback1.called)
         self.assertFalse(callback2.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
-    @unittest.mock.patch('os.WTERMSIG', wraps=WTERMSIG)
-    @unittest.mock.patch('os.WEXITSTATUS', wraps=WEXITSTATUS)
-    @unittest.mock.patch('os.WIFSIGNALED', wraps=WIFSIGNALED)
-    @unittest.mock.patch('os.WIFEXITED', wraps=WIFEXITED)
-    @unittest.mock.patch('os.waitpid', wraps=waitpid)
-    def test_sigchld_two_children_terminating_together(
-            self, m_waitpid, m_WIFEXITED, m_WIFSIGNALED, m_WEXITSTATUS,
-            m_WTERMSIG):
+    @waitpid_mocks
+    def test_sigchld_two_children_terminating_together(self, m):
         callback1 = unittest.mock.Mock()
         callback2 = unittest.mock.Mock()
 
@@ -941,10 +959,10 @@ class ChildWatcherTestsMixin:
 
         self.assertFalse(callback1.called)
         self.assertFalse(callback2.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
         # register child 2
         with self.watcher:
@@ -952,20 +970,20 @@ class ChildWatcherTestsMixin:
 
         self.assertFalse(callback1.called)
         self.assertFalse(callback2.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
         # childen are running
         self.watcher._sig_chld()
 
         self.assertFalse(callback1.called)
         self.assertFalse(callback2.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
         # child 1 terminates (code 78)
         # child 2 terminates (signal 5)
@@ -976,15 +994,15 @@ class ChildWatcherTestsMixin:
 
         callback1.assert_called_once_with(45, 78, 17, 8)
         callback2.assert_called_once_with(46, -5, 1147, 18)
-        self.assertTrue(m_WIFSIGNALED.called)
-        self.assertTrue(m_WIFEXITED.called)
-        self.assertTrue(m_WEXITSTATUS.called)
-        self.assertTrue(m_WTERMSIG.called)
+        self.assertTrue(m.WIFSIGNALED.called)
+        self.assertTrue(m.WIFEXITED.called)
+        self.assertTrue(m.WEXITSTATUS.called)
+        self.assertTrue(m.WTERMSIG.called)
 
-        m_WIFSIGNALED.reset_mock()
-        m_WIFEXITED.reset_mock()
-        m_WTERMSIG.reset_mock()
-        m_WEXITSTATUS.reset_mock()
+        m.WIFSIGNALED.reset_mock()
+        m.WIFEXITED.reset_mock()
+        m.WTERMSIG.reset_mock()
+        m.WEXITSTATUS.reset_mock()
         callback1.reset_mock()
         callback2.reset_mock()
 
@@ -996,16 +1014,10 @@ class ChildWatcherTestsMixin:
 
         self.assertFalse(callback1.called)
         self.assertFalse(callback2.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WTERMSIG.called)
 
-    @unittest.mock.patch('os.WTERMSIG', wraps=WTERMSIG)
-    @unittest.mock.patch('os.WEXITSTATUS', wraps=WEXITSTATUS)
-    @unittest.mock.patch('os.WIFSIGNALED', wraps=WIFSIGNALED)
-    @unittest.mock.patch('os.WIFEXITED', wraps=WIFEXITED)
-    @unittest.mock.patch('os.waitpid', wraps=waitpid)
-    def test_sigchld_race_condition(
-            self, m_waitpid, m_WIFEXITED, m_WIFSIGNALED, m_WEXITSTATUS,
-            m_WTERMSIG):
+    @waitpid_mocks
+    def test_sigchld_race_condition(self, m):
         # register a child
         callback = unittest.mock.Mock()
 
@@ -1026,14 +1038,8 @@ class ChildWatcherTestsMixin:
 
         self.assertFalse(callback.called)
 
-    @unittest.mock.patch('os.WTERMSIG', wraps=WTERMSIG)
-    @unittest.mock.patch('os.WEXITSTATUS', wraps=WEXITSTATUS)
-    @unittest.mock.patch('os.WIFSIGNALED', wraps=WIFSIGNALED)
-    @unittest.mock.patch('os.WIFEXITED', wraps=WIFEXITED)
-    @unittest.mock.patch('os.waitpid', wraps=waitpid)
-    def test_sigchld_replace_handler(
-            self, m_waitpid, m_WIFEXITED, m_WIFSIGNALED, m_WEXITSTATUS,
-            m_WTERMSIG):
+    @waitpid_mocks
+    def test_sigchld_replace_handler(self, m):
         callback1 = unittest.mock.Mock()
         callback2 = unittest.mock.Mock()
 
@@ -1044,10 +1050,10 @@ class ChildWatcherTestsMixin:
 
         self.assertFalse(callback1.called)
         self.assertFalse(callback2.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
         # register the same child again
         with self.watcher:
@@ -1055,10 +1061,10 @@ class ChildWatcherTestsMixin:
 
         self.assertFalse(callback1.called)
         self.assertFalse(callback2.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
         # child terminates (signal 8)
         self.running = False
@@ -1067,13 +1073,13 @@ class ChildWatcherTestsMixin:
 
         callback2.assert_called_once_with(51, -8, 21)
         self.assertFalse(callback1.called)
-        self.assertTrue(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertTrue(m_WTERMSIG.called)
+        self.assertTrue(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertTrue(m.WTERMSIG.called)
 
-        m_WIFSIGNALED.reset_mock()
-        m_WIFEXITED.reset_mock()
-        m_WTERMSIG.reset_mock()
+        m.WIFSIGNALED.reset_mock()
+        m.WIFEXITED.reset_mock()
+        m.WTERMSIG.reset_mock()
         callback2.reset_mock()
 
         # ensure that the child is effectively reaped
@@ -1083,15 +1089,10 @@ class ChildWatcherTestsMixin:
 
         self.assertFalse(callback1.called)
         self.assertFalse(callback2.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WTERMSIG.called)
 
-    @unittest.mock.patch('os.WTERMSIG', wraps=WTERMSIG)
-    @unittest.mock.patch('os.WEXITSTATUS', wraps=WEXITSTATUS)
-    @unittest.mock.patch('os.WIFSIGNALED', wraps=WIFSIGNALED)
-    @unittest.mock.patch('os.WIFEXITED', wraps=WIFEXITED)
-    @unittest.mock.patch('os.waitpid', wraps=waitpid)
-    def test_sigchld_remove_handler(self, m_waitpid, m_WIFEXITED,
-                                    m_WIFSIGNALED, m_WEXITSTATUS, m_WTERMSIG):
+    @waitpid_mocks
+    def test_sigchld_remove_handler(self, m):
         callback = unittest.mock.Mock()
 
         # register a child
@@ -1100,19 +1101,19 @@ class ChildWatcherTestsMixin:
             self.watcher.add_child_handler(52, callback, 1984)
 
         self.assertFalse(callback.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
         # unregister the child
         self.watcher.remove_child_handler(52)
 
         self.assertFalse(callback.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
         # child terminates (code 99)
         self.running = False
@@ -1122,13 +1123,8 @@ class ChildWatcherTestsMixin:
 
         self.assertFalse(callback.called)
 
-    @unittest.mock.patch('os.WTERMSIG', wraps=WTERMSIG)
-    @unittest.mock.patch('os.WEXITSTATUS', wraps=WEXITSTATUS)
-    @unittest.mock.patch('os.WIFSIGNALED', wraps=WIFSIGNALED)
-    @unittest.mock.patch('os.WIFEXITED', wraps=WIFEXITED)
-    @unittest.mock.patch('os.waitpid', wraps=waitpid)
-    def test_sigchld_unknown_status(self, m_waitpid, m_WIFEXITED,
-                                    m_WIFSIGNALED, m_WEXITSTATUS, m_WTERMSIG):
+    @waitpid_mocks
+    def test_sigchld_unknown_status(self, m):
         callback = unittest.mock.Mock()
 
         # register a child
@@ -1137,10 +1133,10 @@ class ChildWatcherTestsMixin:
             self.watcher.add_child_handler(53, callback, -19)
 
         self.assertFalse(callback.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
         # terminate with unknown status
         self.zombies[53] = 1178
@@ -1148,14 +1144,14 @@ class ChildWatcherTestsMixin:
         self.watcher._sig_chld()
 
         callback.assert_called_once_with(53, 1178, -19)
-        self.assertTrue(m_WIFEXITED.called)
-        self.assertTrue(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertTrue(m.WIFEXITED.called)
+        self.assertTrue(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
         callback.reset_mock()
-        m_WIFEXITED.reset_mock()
-        m_WIFSIGNALED.reset_mock()
+        m.WIFEXITED.reset_mock()
+        m.WIFSIGNALED.reset_mock()
 
         # ensure that the child is effectively reaped
         self.add_zombie(53, 101)
@@ -1164,13 +1160,8 @@ class ChildWatcherTestsMixin:
 
         self.assertFalse(callback.called)
 
-    @unittest.mock.patch('os.WTERMSIG', wraps=WTERMSIG)
-    @unittest.mock.patch('os.WEXITSTATUS', wraps=WEXITSTATUS)
-    @unittest.mock.patch('os.WIFSIGNALED', wraps=WIFSIGNALED)
-    @unittest.mock.patch('os.WIFEXITED', wraps=WIFEXITED)
-    @unittest.mock.patch('os.waitpid', wraps=waitpid)
-    def test_remove_child_handler(self, m_waitpid, m_WIFEXITED,
-                                  m_WIFSIGNALED, m_WEXITSTATUS, m_WTERMSIG):
+    @waitpid_mocks
+    def test_remove_child_handler(self, m):
         callback1 = unittest.mock.Mock()
         callback2 = unittest.mock.Mock()
         callback3 = unittest.mock.Mock()
@@ -1202,8 +1193,8 @@ class ChildWatcherTestsMixin:
         self.assertFalse(callback2.called)
         callback3.assert_called_once_with(56, 2, 3)
 
-    @unittest.mock.patch('os.waitpid', wraps=waitpid)
-    def test_sigchld_unhandled_exception(self, m_waitpid):
+    @waitpid_mocks
+    def test_sigchld_unhandled_exception(self, m):
         callback = unittest.mock.Mock()
 
         # register a child
@@ -1212,7 +1203,7 @@ class ChildWatcherTestsMixin:
             self.watcher.add_child_handler(57, callback)
 
         # raise an exception
-        m_waitpid.side_effect = ValueError
+        m.waitpid.side_effect = ValueError
 
         with unittest.mock.patch.object(unix_events.logger,
                                         "exception") as m_exception:
@@ -1220,15 +1211,8 @@ class ChildWatcherTestsMixin:
             self.assertEqual(self.watcher._sig_chld(), None)
             self.assertTrue(m_exception.called)
 
-    @unittest.mock.patch('os.WTERMSIG', wraps=WTERMSIG)
-    @unittest.mock.patch('os.WEXITSTATUS', wraps=WEXITSTATUS)
-    @unittest.mock.patch('os.WIFSIGNALED', wraps=WIFSIGNALED)
-    @unittest.mock.patch('os.WIFEXITED', wraps=WIFEXITED)
-    @unittest.mock.patch('os.waitpid', wraps=waitpid)
-    def test_sigchld_child_reaped_elsewhere(
-            self, m_waitpid, m_WIFEXITED, m_WIFSIGNALED, m_WEXITSTATUS,
-            m_WTERMSIG):
-
+    @waitpid_mocks
+    def test_sigchld_child_reaped_elsewhere(self, m):
         # register a child
         callback = unittest.mock.Mock()
 
@@ -1237,10 +1221,10 @@ class ChildWatcherTestsMixin:
             self.watcher.add_child_handler(58, callback)
 
         self.assertFalse(callback.called)
-        self.assertFalse(m_WIFEXITED.called)
-        self.assertFalse(m_WIFSIGNALED.called)
-        self.assertFalse(m_WEXITSTATUS.called)
-        self.assertFalse(m_WTERMSIG.called)
+        self.assertFalse(m.WIFEXITED.called)
+        self.assertFalse(m.WIFSIGNALED.called)
+        self.assertFalse(m.WEXITSTATUS.called)
+        self.assertFalse(m.WTERMSIG.called)
 
         # child terminates
         self.running = False
@@ -1249,13 +1233,13 @@ class ChildWatcherTestsMixin:
         # waitpid is called elsewhere
         os.waitpid(58, os.WNOHANG)
 
-        m_waitpid.reset_mock()
+        m.waitpid.reset_mock()
 
         # sigchld
         with self.ignore_warnings:
             self.watcher._sig_chld()
 
-        callback.assert_called(m_waitpid)
+        callback.assert_called(m.waitpid)
         if isinstance(self.watcher, unix_events.FastChildWatcher):
             # here the FastChildWatche enters a deadlock
             # (there is no way to prevent it)
@@ -1263,15 +1247,8 @@ class ChildWatcherTestsMixin:
         else:
             callback.assert_called_once_with(58, 255)
 
-    @unittest.mock.patch('os.WTERMSIG', wraps=WTERMSIG)
-    @unittest.mock.patch('os.WEXITSTATUS', wraps=WEXITSTATUS)
-    @unittest.mock.patch('os.WIFSIGNALED', wraps=WIFSIGNALED)
-    @unittest.mock.patch('os.WIFEXITED', wraps=WIFEXITED)
-    @unittest.mock.patch('os.waitpid', wraps=waitpid)
-    def test_sigchld_unknown_pid_during_registration(
-            self, m_waitpid, m_WIFEXITED, m_WIFSIGNALED, m_WEXITSTATUS,
-            m_WTERMSIG):
-
+    @waitpid_mocks
+    def test_sigchld_unknown_pid_during_registration(self, m):
         # register two children
         callback1 = unittest.mock.Mock()
         callback2 = unittest.mock.Mock()
@@ -1291,15 +1268,8 @@ class ChildWatcherTestsMixin:
         callback1.assert_called_once_with(591, 7)
         self.assertFalse(callback2.called)
 
-    @unittest.mock.patch('os.WTERMSIG', wraps=WTERMSIG)
-    @unittest.mock.patch('os.WEXITSTATUS', wraps=WEXITSTATUS)
-    @unittest.mock.patch('os.WIFSIGNALED', wraps=WIFSIGNALED)
-    @unittest.mock.patch('os.WIFEXITED', wraps=WIFEXITED)
-    @unittest.mock.patch('os.waitpid', wraps=waitpid)
-    def test_set_loop(
-            self, m_waitpid, m_WIFEXITED, m_WIFSIGNALED, m_WEXITSTATUS,
-            m_WTERMSIG):
-
+    @waitpid_mocks
+    def test_set_loop(self, m):
         # register a child
         callback = unittest.mock.Mock()
 
@@ -1318,7 +1288,7 @@ class ChildWatcherTestsMixin:
                 self.loop,
                 "add_signal_handler") as m_new_add_signal_handler:
 
-            self.watcher.set_loop(self.loop)
+            self.watcher.attach_loop(self.loop)
 
             m_old_remove_signal_handler.assert_called_once_with(
                 signal.SIGCHLD)
@@ -1332,15 +1302,8 @@ class ChildWatcherTestsMixin:
 
         callback.assert_called_once_with(60, 9)
 
-    @unittest.mock.patch('os.WTERMSIG', wraps=WTERMSIG)
-    @unittest.mock.patch('os.WEXITSTATUS', wraps=WEXITSTATUS)
-    @unittest.mock.patch('os.WIFSIGNALED', wraps=WIFSIGNALED)
-    @unittest.mock.patch('os.WIFEXITED', wraps=WIFEXITED)
-    @unittest.mock.patch('os.waitpid', wraps=waitpid)
-    def test_set_loop_race_condition(
-            self, m_waitpid, m_WIFEXITED, m_WIFSIGNALED, m_WEXITSTATUS,
-            m_WTERMSIG):
-
+    @waitpid_mocks
+    def test_set_loop_race_condition(self, m):
         # register 3 children
         callback1 = unittest.mock.Mock()
         callback2 = unittest.mock.Mock()
@@ -1359,7 +1322,7 @@ class ChildWatcherTestsMixin:
         with unittest.mock.patch.object(
                 old_loop, "remove_signal_handler") as m_remove_signal_handler:
 
-            self.watcher.set_loop(None)
+            self.watcher.attach_loop(None)
 
             m_remove_signal_handler.assert_called_once_with(
                 signal.SIGCHLD)
@@ -1379,7 +1342,7 @@ class ChildWatcherTestsMixin:
         with unittest.mock.patch.object(
                 self.loop, "add_signal_handler") as m_add_signal_handler:
 
-            self.watcher.set_loop(self.loop)
+            self.watcher.attach_loop(self.loop)
 
             m_add_signal_handler.assert_called_once_with(
                 signal.SIGCHLD, self.watcher._sig_chld)
@@ -1399,15 +1362,8 @@ class ChildWatcherTestsMixin:
         self.assertFalse(callback2.called)
         callback3.assert_called_once_with(622, 19)
 
-    @unittest.mock.patch('os.WTERMSIG', wraps=WTERMSIG)
-    @unittest.mock.patch('os.WEXITSTATUS', wraps=WEXITSTATUS)
-    @unittest.mock.patch('os.WIFSIGNALED', wraps=WIFSIGNALED)
-    @unittest.mock.patch('os.WIFEXITED', wraps=WIFEXITED)
-    @unittest.mock.patch('os.waitpid', wraps=waitpid)
-    def test_close(
-            self, m_waitpid, m_WIFEXITED, m_WIFSIGNALED, m_WEXITSTATUS,
-            m_WTERMSIG):
-
+    @waitpid_mocks
+    def test_close(self, m):
         # register two children
         callback1 = unittest.mock.Mock()
         callback2 = unittest.mock.Mock()
@@ -1441,13 +1397,13 @@ class ChildWatcherTestsMixin:
 
 
 class SafeChildWatcherTests (ChildWatcherTestsMixin, unittest.TestCase):
-    def create_watcher(self, loop):
-        return unix_events.SafeChildWatcher(loop)
+    def create_watcher(self):
+        return unix_events.SafeChildWatcher()
 
 
 class FastChildWatcherTests (ChildWatcherTestsMixin, unittest.TestCase):
-    def create_watcher(self, loop):
-        return unix_events.FastChildWatcher(loop)
+    def create_watcher(self):
+        return unix_events.FastChildWatcher()
 
 
 class PolicyTests(unittest.TestCase):
@@ -1469,7 +1425,7 @@ class PolicyTests(unittest.TestCase):
 
     def test_get_child_watcher_after_set(self):
         policy = self.create_policy()
-        watcher = unix_events.FastChildWatcher(None)
+        watcher = unix_events.FastChildWatcher()
 
         policy.set_child_watcher(watcher)
         self.assertIs(policy._watcher, watcher)

@@ -170,7 +170,7 @@ class BaseEventLoopTests(unittest.TestCase):
         f.cancel()  # Don't complain about abandoned Future.
 
     def test__run_once(self):
-        h1 = events.TimerHandle(time.monotonic() + 0.1, lambda: True, ())
+        h1 = events.TimerHandle(time.monotonic() + 5.0, lambda: True, ())
         h2 = events.TimerHandle(time.monotonic() + 10.0, lambda: True, ())
 
         h1.cancel()
@@ -181,7 +181,7 @@ class BaseEventLoopTests(unittest.TestCase):
         self.loop._run_once()
 
         t = self.loop._selector.select.call_args[0][0]
-        self.assertTrue(9.99 < t < 10.1, t)
+        self.assertTrue(9.5 < t < 10.5, t)
         self.assertEqual([h2], self.loop._scheduled)
         self.assertTrue(self.loop._process_events.called)
 
@@ -284,7 +284,7 @@ class MyDatagramProto(protocols.DatagramProtocol):
         assert self.state == 'INITIALIZED', self.state
         self.nbytes += len(data)
 
-    def connection_refused(self, exc):
+    def error_received(self, exc):
         assert self.state == 'INITIALIZED', self.state
 
     def connection_lost(self, exc):
@@ -458,16 +458,26 @@ class BaseEventLoopWithSelectorTests(unittest.TestCase):
         self.loop.sock_connect.return_value = ()
         self.loop._make_ssl_transport = unittest.mock.Mock()
 
+        class _SelectorTransportMock:
+            _sock = None
+
+            def close(self):
+                self._sock.close()
+
         def mock_make_ssl_transport(sock, protocol, sslcontext, waiter,
                                     **kwds):
             waiter.set_result(None)
+            transport = _SelectorTransportMock()
+            transport._sock = sock
+            return transport
 
         self.loop._make_ssl_transport.side_effect = mock_make_ssl_transport
         ANY = unittest.mock.ANY
         # First try the default server_hostname.
         self.loop._make_ssl_transport.reset_mock()
         coro = self.loop.create_connection(MyProto, 'python.org', 80, ssl=True)
-        self.loop.run_until_complete(coro)
+        transport, _ = self.loop.run_until_complete(coro)
+        transport.close()
         self.loop._make_ssl_transport.assert_called_with(
             ANY, ANY, ANY, ANY,
             server_side=False,
@@ -476,7 +486,8 @@ class BaseEventLoopWithSelectorTests(unittest.TestCase):
         self.loop._make_ssl_transport.reset_mock()
         coro = self.loop.create_connection(MyProto, 'python.org', 80, ssl=True,
                                            server_hostname='perl.com')
-        self.loop.run_until_complete(coro)
+        transport, _ = self.loop.run_until_complete(coro)
+        transport.close()
         self.loop._make_ssl_transport.assert_called_with(
             ANY, ANY, ANY, ANY,
             server_side=False,
@@ -485,7 +496,8 @@ class BaseEventLoopWithSelectorTests(unittest.TestCase):
         self.loop._make_ssl_transport.reset_mock()
         coro = self.loop.create_connection(MyProto, 'python.org', 80, ssl=True,
                                            server_hostname='')
-        self.loop.run_until_complete(coro)
+        transport, _ = self.loop.run_until_complete(coro)
+        transport.close()
         self.loop._make_ssl_transport.assert_called_with(ANY, ANY, ANY, ANY,
                                                          server_side=False,
                                                          server_hostname='')
@@ -505,8 +517,10 @@ class BaseEventLoopWithSelectorTests(unittest.TestCase):
         self.assertRaises(ValueError, self.loop.run_until_complete, coro)
         coro = self.loop.create_connection(MyProto, None, 80, ssl=True)
         self.assertRaises(ValueError, self.loop.run_until_complete, coro)
+        sock = socket.socket()
         coro = self.loop.create_connection(MyProto, None, None,
-                                           ssl=True, sock=socket.socket())
+                                           ssl=True, sock=sock)
+        self.addCleanup(sock.close)
         self.assertRaises(ValueError, self.loop.run_until_complete, coro)
 
     def test_create_server_empty_host(self):

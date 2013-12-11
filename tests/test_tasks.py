@@ -779,7 +779,7 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(len(res), 2, res)
         self.assertEqual(res[0], (1, 'a'))
         self.assertEqual(res[1][0], 2)
-        self.assertTrue(isinstance(res[1][1], futures.TimeoutError))
+        self.assertIsInstance(res[1][1], futures.TimeoutError)
         self.assertAlmostEqual(0.12, loop.time())
 
         # move forward to close generator
@@ -1112,6 +1112,42 @@ class TaskTests(unittest.TestCase):
         res = self.loop.run_until_complete(t1)
         self.assertEqual(res, 'test')
         self.assertIsNone(t2.result())
+
+    def test_current_task(self):
+        self.assertIsNone(tasks.Task.current_task(loop=self.loop))
+        @tasks.coroutine
+        def coro(loop):
+            self.assertTrue(tasks.Task.current_task(loop=loop) is task)
+
+        task = tasks.Task(coro(self.loop), loop=self.loop)
+        self.loop.run_until_complete(task)
+        self.assertIsNone(tasks.Task.current_task(loop=self.loop))
+
+    def test_current_task_with_interleaving_tasks(self):
+        self.assertIsNone(tasks.Task.current_task(loop=self.loop))
+
+        fut1 = futures.Future(loop=self.loop)
+        fut2 = futures.Future(loop=self.loop)
+
+        @tasks.coroutine
+        def coro1(loop):
+            self.assertTrue(tasks.Task.current_task(loop=loop) is task1)
+            yield from fut1
+            self.assertTrue(tasks.Task.current_task(loop=loop) is task1)
+            fut2.set_result(True)
+
+        @tasks.coroutine
+        def coro2(loop):
+            self.assertTrue(tasks.Task.current_task(loop=loop) is task2)
+            fut1.set_result(True)
+            yield from fut2
+            self.assertTrue(tasks.Task.current_task(loop=loop) is task2)
+
+        task1 = tasks.Task(coro1(self.loop), loop=self.loop)
+        task2 = tasks.Task(coro2(self.loop), loop=self.loop)
+
+        self.loop.run_until_complete(tasks.wait((task1, task2), loop=self.loop))
+        self.assertIsNone(tasks.Task.current_task(loop=self.loop))
 
     # Some thorough tests for cancellation propagation through
     # coroutines, tasks and wait().
