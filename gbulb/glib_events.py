@@ -21,10 +21,10 @@ import collections
 import os
 
 class GLibChildWatcher(unix_events.AbstractChildWatcher):
-    def __init__(self, loop):
+    def __init__(self):
         self._sources = {}
 
-    def set_loop(self, loop):
+    def attach_loop(self, loop):
         # just ignored
         pass
 
