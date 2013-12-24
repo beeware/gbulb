@@ -685,7 +685,7 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         self.set_event_loop = self._policy.set_event_loop
         self.get_child_watcher = self._policy.get_child_watcher
 
-        self._policy.set_child_watcher(GLibChildWatcher(None))
+        self._policy.set_child_watcher(GLibChildWatcher())
 
         BaseGLibEventLoop.init_class()
 
