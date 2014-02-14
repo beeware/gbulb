@@ -2,14 +2,11 @@
 
 import gc
 import unittest
+import unittest.mock
+from unittest.mock import Mock
 
 import asyncio
 from asyncio import test_utils
-
-
-@asyncio.coroutine
-def coroutine_function():
-    pass
 
 
 class Dummy:
@@ -779,6 +776,7 @@ class TaskTests(unittest.TestCase):
             yield 0
             yield 0
             yield 0.1
+            yield 0.02
 
         loop = test_utils.TestLoop(gen)
         self.addCleanup(loop.close)
@@ -790,8 +788,6 @@ class TaskTests(unittest.TestCase):
         def foo():
             values = []
             for f in asyncio.as_completed([a, b], timeout=0.12, loop=loop):
-                if values:
-                    loop.advance_time(0.02)
                 try:
                     v = yield from f
                     values.append((1, v))
@@ -809,26 +805,6 @@ class TaskTests(unittest.TestCase):
         # move forward to close generator
         loop.advance_time(10)
         loop.run_until_complete(asyncio.wait([a, b], loop=loop))
-
-    def test_as_completed_with_unused_timeout(self):
-
-        def gen():
-            yield
-            yield 0
-            yield 0.01
-
-        loop = test_utils.TestLoop(gen)
-        self.addCleanup(loop.close)
-
-        a = asyncio.sleep(0.01, 'a', loop=loop)
-
-        @asyncio.coroutine
-        def foo():
-            for f in asyncio.as_completed([a], timeout=1, loop=loop):
-                v = yield from f
-                self.assertEqual(v, 'a')
-
-        res = loop.run_until_complete(asyncio.Task(foo(), loop=loop))
 
     def test_as_completed_reverse_wait(self):
 
@@ -1364,27 +1340,6 @@ class TaskTests(unittest.TestCase):
         child2.set_result(2)
         test_utils.run_briefly(self.loop)
 
-    def test_as_completed_invalid_args(self):
-        fut = asyncio.Future(loop=self.loop)
-
-        # as_completed() expects a list of futures, not a future instance
-        self.assertRaises(TypeError, self.loop.run_until_complete,
-            asyncio.as_completed(fut, loop=self.loop))
-        self.assertRaises(TypeError, self.loop.run_until_complete,
-            asyncio.as_completed(coroutine_function(), loop=self.loop))
-
-    def test_wait_invalid_args(self):
-        fut = asyncio.Future(loop=self.loop)
-
-        # wait() expects a list of futures, not a future instance
-        self.assertRaises(TypeError, self.loop.run_until_complete,
-            asyncio.wait(fut, loop=self.loop))
-        self.assertRaises(TypeError, self.loop.run_until_complete,
-            asyncio.wait(coroutine_function(), loop=self.loop))
-
-        # wait() expects at least a future
-        self.assertRaises(ValueError, self.loop.run_until_complete,
-            asyncio.wait([], loop=self.loop))
 
 class GatherTestsBase:
 
@@ -1403,7 +1358,7 @@ class GatherTestsBase:
     def _check_success(self, **kwargs):
         a, b, c = [asyncio.Future(loop=self.one_loop) for i in range(3)]
         fut = asyncio.gather(*self.wrap_futures(a, b, c), **kwargs)
-        cb = test_utils.MockCallback()
+        cb = Mock()
         fut.add_done_callback(cb)
         b.set_result(1)
         a.set_result(2)
@@ -1425,7 +1380,7 @@ class GatherTestsBase:
     def test_one_exception(self):
         a, b, c, d, e = [asyncio.Future(loop=self.one_loop) for i in range(5)]
         fut = asyncio.gather(*self.wrap_futures(a, b, c, d, e))
-        cb = test_utils.MockCallback()
+        cb = Mock()
         fut.add_done_callback(cb)
         exc = ZeroDivisionError()
         a.set_result(1)
@@ -1444,7 +1399,7 @@ class GatherTestsBase:
         a, b, c, d = [asyncio.Future(loop=self.one_loop) for i in range(4)]
         fut = asyncio.gather(*self.wrap_futures(a, b, c, d),
                              return_exceptions=True)
-        cb = test_utils.MockCallback()
+        cb = Mock()
         fut.add_done_callback(cb)
         exc = ZeroDivisionError()
         exc2 = RuntimeError()
@@ -1505,7 +1460,7 @@ class FutureGatherTests(GatherTestsBase, unittest.TestCase):
     def test_one_cancellation(self):
         a, b, c, d, e = [asyncio.Future(loop=self.one_loop) for i in range(5)]
         fut = asyncio.gather(a, b, c, d, e)
-        cb = test_utils.MockCallback()
+        cb = Mock()
         fut.add_done_callback(cb)
         a.set_result(1)
         b.cancel()
@@ -1524,7 +1479,7 @@ class FutureGatherTests(GatherTestsBase, unittest.TestCase):
         a, b, c, d, e, f = [asyncio.Future(loop=self.one_loop)
                             for i in range(6)]
         fut = asyncio.gather(a, b, c, d, e, f, return_exceptions=True)
-        cb = test_utils.MockCallback()
+        cb = Mock()
         fut.add_done_callback(cb)
         a.set_result(1)
         zde = ZeroDivisionError()
