@@ -241,7 +241,7 @@ class BaseEventLoop(events.AbstractEventLoop):
 #        Any positional arguments after the callback will be passed to
 #        the callback when it is called.
 #        """
-#        handle = events.make_handle(callback, args)
+#        handle = events.Handle(callback, args)
 #        self._ready.append(handle)
 #        return handle
 
@@ -552,9 +552,14 @@ class BaseEventLoop(events.AbstractEventLoop):
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          universal_newlines=False, shell=True, bufsize=0,
                          **kwargs):
-        assert not universal_newlines, "universal_newlines must be False"
-        assert shell, "shell must be True"
-        assert isinstance(cmd, str), cmd
+        if not isinstance(cmd, str):
+            raise ValueError("cmd must be a string")
+        if universal_newlines:
+            raise ValueError("universal_newlines must be False")
+        if not shell:
+            raise ValueError("shell must be True")
+        if bufsize != 0:
+            raise ValueError("bufsize must be 0")
         protocol = protocol_factory()
         transport = yield from self._make_subprocess_transport(
             protocol, cmd, True, stdin, stdout, stderr, bufsize, **kwargs)
@@ -565,8 +570,12 @@ class BaseEventLoop(events.AbstractEventLoop):
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                         universal_newlines=False, shell=False, bufsize=0,
                         **kwargs):
-        assert not universal_newlines, "universal_newlines must be False"
-        assert not shell, "shell must be False"
+        if universal_newlines:
+            raise ValueError("universal_newlines must be False")
+        if shell:
+            raise ValueError("shell must be False")
+        if bufsize != 0:
+            raise ValueError("bufsize must be 0")
         protocol = protocol_factory()
         transport = yield from self._make_subprocess_transport(
             protocol, args, False, stdin, stdout, stderr, bufsize, **kwargs)
@@ -611,15 +620,27 @@ class BaseEventLoop(events.AbstractEventLoop):
 #                timeout = min(timeout, deadline)
 #
 #        # TODO: Instrumentation only in debug mode?
-#        t0 = self.time()
-#        event_list = self._selector.select(timeout)
-#        t1 = self.time()
-#        argstr = '' if timeout is None else '{:.3f}'.format(timeout)
-#        if t1-t0 >= 1:
-#            level = logging.INFO
+#        if logger.isEnabledFor(logging.INFO):
+#            t0 = self.time()
+#            event_list = self._selector.select(timeout)
+#            t1 = self.time()
+#            if t1-t0 >= 1:
+#                level = logging.INFO
+#            else:
+#                level = logging.DEBUG
+#            if timeout is not None:
+#                logger.log(level, 'poll %.3f took %.3f seconds',
+#                           timeout, t1-t0)
+#            else:
+#                logger.log(level, 'poll took %.3f seconds', t1-t0)
 #        else:
-#            level = logging.DEBUG
-#        logger.log(level, 'poll%s took %.3f seconds', argstr, t1-t0)
+#            t0 = self.time()
+#            event_list = self._selector.select(timeout)
+#            dt = self.time() - t0
+#            if not event_list and timeout and dt < timeout:
+#                print("asyncio: selector.select(%.3f ms) took %.3f ms"
+#                      % (timeout*1e3, dt*1e3),
+#                      file=sys.__stderr__, flush=True)
 #        self._process_events(event_list)
 #
 #        # Handle 'later' callbacks that are ready.
