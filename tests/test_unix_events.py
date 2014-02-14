@@ -17,9 +17,8 @@ if sys.platform == 'win32':
     raise unittest.SkipTest('UNIX only')
 
 
-from asyncio import events
-from asyncio import futures
-from asyncio import protocols
+import asyncio
+from asyncio import log
 from asyncio import test_utils
 from asyncio import unix_events
 
@@ -35,7 +34,7 @@ class SelectorEventLoopTests(unittest.TestCase):
 
     def setUp(self):
         self.loop = gbulb.GLibEventLoop(GLib.main_context_default())
-        events.set_event_loop(None)
+        asyncio.set_event_loop(None)
 
     def tearDown(self):
         self.loop.close()
@@ -52,7 +51,7 @@ class SelectorEventLoopTests(unittest.TestCase):
 
     @unittest.skip
     def test_handle_signal_cancelled_handler(self):
-        h = events.Handle(unittest.mock.Mock(), ())
+        h = asyncio.Handle(unittest.mock.Mock(), ())
         h.cancel()
         self.loop._signal_handlers[signal.NSIG + 1] = h
         self.loop.remove_signal_handler = unittest.mock.Mock()
@@ -77,7 +76,7 @@ class SelectorEventLoopTests(unittest.TestCase):
         cb = lambda: True
         self.loop.add_signal_handler(signal.SIGHUP, cb)
         h = self.loop._sighandlers.get(signal.SIGHUP)
-        self.assertIsInstance(h, events.Handle)
+        self.assertIsInstance(h, asyncio.Handle)
         self.assertEqual(h._callback, cb)
 
     @unittest.skip
@@ -345,7 +344,7 @@ class UnixReadPipeTransportTests(unittest.TestCase):
 
     def setUp(self):
         self.loop = test_utils.TestLoop()
-        self.protocol = test_utils.make_test_protocol(protocols.Protocol)
+        self.protocol = test_utils.make_test_protocol(asyncio.Protocol)
         self.pipe = unittest.mock.Mock(spec_set=io.RawIOBase)
         self.pipe.fileno.return_value = 5
 
@@ -368,7 +367,7 @@ class UnixReadPipeTransportTests(unittest.TestCase):
         self.protocol.connection_made.assert_called_with(tr)
 
     def test_ctor_with_waiter(self):
-        fut = futures.Future(loop=self.loop)
+        fut = asyncio.Future(loop=self.loop)
         unix_events._UnixReadPipeTransport(
             self.loop, self.pipe, self.protocol, fut)
         test_utils.run_briefly(self.loop)
@@ -508,7 +507,7 @@ class UnixWritePipeTransportTests(unittest.TestCase):
 
     def setUp(self):
         self.loop = test_utils.TestLoop()
-        self.protocol = test_utils.make_test_protocol(protocols.BaseProtocol)
+        self.protocol = test_utils.make_test_protocol(asyncio.BaseProtocol)
         self.pipe = unittest.mock.Mock(spec_set=io.RawIOBase)
         self.pipe.fileno.return_value = 5
 
@@ -531,7 +530,7 @@ class UnixWritePipeTransportTests(unittest.TestCase):
         self.protocol.connection_made.assert_called_with(tr)
 
     def test_ctor_with_waiter(self):
-        fut = futures.Future(loop=self.loop)
+        fut = asyncio.Future(loop=self.loop)
         tr = unix_events._UnixWritePipeTransport(
             self.loop, self.pipe, self.protocol, fut)
         self.loop.assert_reader(5, tr._read_ready)
@@ -822,7 +821,7 @@ class AbstractChildWatcherTests(unittest.TestCase):
 
     def test_not_implemented(self):
         f = unittest.mock.Mock()
-        watcher = unix_events.AbstractChildWatcher()
+        watcher = asyncio.AbstractChildWatcher()
         self.assertRaises(
             NotImplementedError, watcher.add_child_handler, f, f)
         self.assertRaises(
@@ -857,7 +856,7 @@ WaitPidMocks = collections.namedtuple("WaitPidMocks",
 
 class ChildWatcherTestsMixin:
 
-    ignore_warnings = unittest.mock.patch.object(unix_events.logger, "warning")
+    ignore_warnings = unittest.mock.patch.object(log.logger, "warning")
 
     def setUp(self):
         self.loop = test_utils.TestLoop()
@@ -870,7 +869,7 @@ class ChildWatcherTestsMixin:
             self.watcher.attach_loop(self.loop)
 
     def waitpid(self, pid, flags):
-        if isinstance(self.watcher, unix_events.SafeChildWatcher) or pid != -1:
+        if isinstance(self.watcher, asyncio.SafeChildWatcher) or pid != -1:
             self.assertGreater(pid, 0)
         try:
             if pid < 0:
@@ -1345,7 +1344,7 @@ class ChildWatcherTestsMixin:
         # raise an exception
         m.waitpid.side_effect = ValueError
 
-        with unittest.mock.patch.object(unix_events.logger,
+        with unittest.mock.patch.object(log.logger,
                                         "exception") as m_exception:
 
             self.assertEqual(self.watcher._sig_chld(), None)
@@ -1380,7 +1379,7 @@ class ChildWatcherTestsMixin:
             self.watcher._sig_chld()
 
         callback.assert_called(m.waitpid)
-        if isinstance(self.watcher, unix_events.FastChildWatcher):
+        if isinstance(self.watcher, asyncio.FastChildWatcher):
             # here the FastChildWatche enters a deadlock
             # (there is no way to prevent it)
             self.assertFalse(callback.called)
@@ -1520,7 +1519,7 @@ class ChildWatcherTestsMixin:
             self.watcher.add_child_handler(64, callback1)
 
             self.assertEqual(len(self.watcher._callbacks), 1)
-            if isinstance(self.watcher, unix_events.FastChildWatcher):
+            if isinstance(self.watcher, asyncio.FastChildWatcher):
                 self.assertEqual(len(self.watcher._zombies), 1)
 
             with unittest.mock.patch.object(
@@ -1532,31 +1531,31 @@ class ChildWatcherTestsMixin:
                 m_remove_signal_handler.assert_called_once_with(
                     signal.SIGCHLD)
                 self.assertFalse(self.watcher._callbacks)
-                if isinstance(self.watcher, unix_events.FastChildWatcher):
+                if isinstance(self.watcher, asyncio.FastChildWatcher):
                     self.assertFalse(self.watcher._zombies)
 
 
 class SafeChildWatcherTests (ChildWatcherTestsMixin, unittest.TestCase):
     def create_watcher(self):
-        return unix_events.SafeChildWatcher()
+        return asyncio.SafeChildWatcher()
 
 
 class FastChildWatcherTests (ChildWatcherTestsMixin, unittest.TestCase):
     def create_watcher(self):
-        return unix_events.FastChildWatcher()
+        return asyncio.FastChildWatcher()
 
 
 class PolicyTests(unittest.TestCase):
 
     def create_policy(self):
-        return unix_events.DefaultEventLoopPolicy()
+        return asyncio.DefaultEventLoopPolicy()
 
     def test_get_child_watcher(self):
         policy = self.create_policy()
         self.assertIsNone(policy._watcher)
 
         watcher = policy.get_child_watcher()
-        self.assertIsInstance(watcher, unix_events.SafeChildWatcher)
+        self.assertIsInstance(watcher, asyncio.SafeChildWatcher)
 
         self.assertIs(policy._watcher, watcher)
 
@@ -1565,7 +1564,7 @@ class PolicyTests(unittest.TestCase):
 
     def test_get_child_watcher_after_set(self):
         policy = self.create_policy()
-        watcher = unix_events.FastChildWatcher()
+        watcher = asyncio.FastChildWatcher()
 
         policy.set_child_watcher(watcher)
         self.assertIs(policy._watcher, watcher)
@@ -1578,7 +1577,7 @@ class PolicyTests(unittest.TestCase):
         self.assertIsNone(policy._watcher)
         watcher = policy.get_child_watcher()
 
-        self.assertIsInstance(watcher, unix_events.SafeChildWatcher)
+        self.assertIsInstance(watcher, asyncio.SafeChildWatcher)
         self.assertIs(watcher._loop, loop)
 
         loop.close()
@@ -1589,10 +1588,10 @@ class PolicyTests(unittest.TestCase):
             policy.set_event_loop(policy.new_event_loop())
 
             self.assertIsInstance(policy.get_event_loop(),
-                                  events.AbstractEventLoop)
+                                  asyncio.AbstractEventLoop)
             watcher = policy.get_child_watcher()
 
-            self.assertIsInstance(watcher, unix_events.SafeChildWatcher)
+            self.assertIsInstance(watcher, asyncio.SafeChildWatcher)
             self.assertIsNone(watcher._loop)
 
             policy.get_event_loop().close()
