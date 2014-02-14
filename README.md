@@ -5,8 +5,8 @@ Gbulb is a python library that implements a [PEP 3156][PEP3156] interface for
 the [GLib main event loop][glibloop]. It is designed to be used together with
 the [tulip reference implementation][tulip].
 
-This is a **work in progress**. The code is experimental and may break at any
-time.
+The code needs to be thoroughly tested, it should be considered as unstable for
+the moment.
 
 
 Anthony Baire
@@ -20,8 +20,7 @@ Apache 2.0
 [https://bitbucket.org/a_ba/gbulb](https://bitbucket.org/a_ba/gbulb)
 
 ## Requirements
-- python3.3
-- tulip
+- python3.4 or python3.3+[asyncio][asyncio]
 - pygobject
 - glib 
 - gtk+3 (optional)
@@ -95,4 +94,5 @@ third-party code calling directly GLib's primitives.
 
 [PEP3156]:  http://www.python.org/dev/peps/pep-3156/
 [tulip]:    http://code.google.com/p/tulip/
+[asyncio]:  https://pypi.python.org/pypi/asyncio
 [glibloop]: https://developer.gnome.org/glib/stable/glib-The-Main-Event-Loop.html
