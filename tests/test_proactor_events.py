@@ -402,7 +402,7 @@ class BaseProactorEventLoopTests(unittest.TestCase):
             NotImplementedError, BaseProactorEventLoop, self.proactor)
 
     def test_make_socket_transport(self):
-        tr = self.loop._make_socket_transport(self.sock, asyncio.Protocol())
+        tr = self.loop._make_socket_transport(self.sock, unittest.mock.Mock())
         self.assertIsInstance(tr, _ProactorSocketTransport)
 
     def test_loop_self_reading(self):

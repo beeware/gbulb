@@ -963,8 +963,6 @@ class EventLoopTestsMixin:
     # select, poll and kqueue don't support character devices (PTY) on Mac OS X
     # older than 10.6 (Snow Leopard)
     @support.requires_mac_ver(10, 6)
-    # Issue #20495: The test hangs on FreeBSD 7.2 but pass on FreeBSD 9
-    @support.requires_freebsd_version(8)
     def test_read_pty_output(self):
         proto = None
 
@@ -1185,34 +1183,16 @@ class EventLoopTestsMixin:
             loop = self.loop
             yield from asyncio.sleep(1e-2, loop=loop)
             yield from asyncio.sleep(1e-4, loop=loop)
-            yield from asyncio.sleep(1e-6, loop=loop)
-            yield from asyncio.sleep(1e-8, loop=loop)
-            yield from asyncio.sleep(1e-10, loop=loop)
 
         self.loop.run_until_complete(wait())
-        # The ideal number of call is 12, but on some platforms, the selector
+        # The ideal number of call is 6, but on some platforms, the selector
         # may sleep at little bit less than timeout depending on the resolution
-        # of the clock used by the kernel. Tolerate a few useless calls on
-        # these platforms.
-        self.assertLessEqual(self.loop._run_once_counter, 20,
-            {'clock_resolution': self.loop._clock_resolution,
+        # of the clock used by the kernel. Tolerate 2 useless calls on these
+        # platforms.
+        self.assertLessEqual(self.loop._run_once_counter, 8,
+            {'time_info': time.get_clock_info('time'),
+             'monotonic_info': time.get_clock_info('monotonic'),
              'selector': self.loop._selector.__class__.__name__})
-
-    def test_sock_connect_address(self):
-        families = [socket.AF_INET]
-        if support.IPV6_ENABLED:
-            families.append(socket.AF_INET6)
-
-        address = ('www.python.org', 80)
-        for family in families:
-            for sock_type in (socket.SOCK_STREAM, socket.SOCK_DGRAM):
-                sock = socket.socket(family, sock_type)
-                with sock:
-                    connect = self.loop.sock_connect(sock, address)
-                    with self.assertRaises(ValueError) as cm:
-                        self.loop.run_until_complete(connect)
-                    self.assertIn('address must be resolved',
-                                  str(cm.exception))
 
 
 class SubprocessTestsMixin:
