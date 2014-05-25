@@ -79,7 +79,7 @@ class GLibChildWatcher(unix_events.AbstractChildWatcher):
 
 class GLibHandle(events.Handle):
     def __init__(self, loop, source, repeat, callback, args):
-        super().__init__(callback, args)
+        super().__init__(callback, args, loop)
 
         self._loop   = loop
         self._source = source
@@ -373,7 +373,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
 
     # Methods scheduling callbacks.  All these return Handles.
     def call_soon(self, callback, *args):
-        h = events.Handle(callback, args)
+        h = events.Handle(callback, args, self)
         self._ready.append(h)
         if not self._will_dispatch:
             self._schedule_dispatch()
