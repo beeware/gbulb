@@ -7,18 +7,14 @@ try:
 except ImportError:
     Gtk = None
 
-from asyncio import events
-from asyncio import futures
-from asyncio import tasks
-from asyncio.log import logger
-
-from . import unix_events
-
-import threading
-import signal
-import weakref
 import collections
 import os
+import signal
+import threading
+import weakref
+from asyncio import events, futures, tasks, unix_events
+from asyncio.log import logger
+
 
 class GLibChildWatcher(unix_events.AbstractChildWatcher):
     def __init__(self):
@@ -81,10 +77,10 @@ class GLibHandle(events.Handle):
     def __init__(self, loop, source, repeat, callback, args):
         super().__init__(callback, args, loop)
 
-        self._loop   = loop
+        self._loop = loop
         self._source = source
         self._repeat = repeat
-        self._ready  = False
+        self._ready = False
         source.set_callback(self.__class__._callback, self)
         source.attach(loop._context)
         loop._handlers.add(self)
@@ -157,7 +153,8 @@ class GLibHandle(events.Handle):
 #
 # about SIGINT -> KeyboardInterrupt will never be raised asynchronously
 
-class BaseGLibEventLoop(unix_events.SelectorEventLoop):
+
+class GLibEventLoop(unix_events.SelectorEventLoop):
     """GLib base event loop
 
     This class handles only the operations related to Glib.MainContext objects.
@@ -172,7 +169,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
             s.attach()
 
             self._source = s
-            self._loop   = None
+            self._loop = None
 
         def attach(self, loop):
             if self._loop:
@@ -205,7 +202,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
 
     def __init__(self, glib_context=None, gtk=False, application=None):
 
-        assert (glib_context is not None) + bool(gtk) + (application is not None) <= 1
+        assert (glib_context is not None) + gtk + (application is not None) <= 1
 
         self._gtk = gtk
         self._application = application
@@ -215,14 +212,13 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         else:
             self._context = glib_context if glib_context else GLib.MainContext()
 
-
         self._readers = {}
         self._writers = {}
         self._sighandlers = {}
         self._chldhandlers = {}
         self._handlers = set()
-        self._ready   = collections.deque()
-        self._wakeup  = None
+        self._ready = collections.deque()
+        self._wakeup = None
         self._will_dispatch = False
         self._loop_implem = None
         self._interrupted = False
@@ -233,6 +229,12 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         # in the default context
         if self._context == GLib.main_context_default():
             self._default_sigint_handler.attach(self)
+
+    def create_task(self, coro):
+        task = tasks.Task(coro, loop=self)
+        if task._source_traceback:
+            del task._source_traceback[-1]
+        return task
 
     def _dispatch(self):
         # This is the only place where callbacks are actually *called*. All
@@ -268,7 +270,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         self._wakeup = GLib.Timeout(0)
         self._wakeup.set_callback(wakeup_cb, self)
         self._wakeup.attach(self._context)
-
 
     def run_until_complete(self, future, **kw):
         """Run the event loop until a Future is done.
@@ -329,7 +330,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
                 self._interrupted = False
                 raise KeyboardInterrupt()
         finally:
-            self._loop_implem = None
+            self.stop()
 
     def is_running(self):
         """Return whether the event loop is currently running."""
@@ -341,7 +342,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         Exactly how soon that is may depend on the implementation, but
         no more I/O callbacks should be scheduled.
         """
-        lh = self._loop_implem
+        lh, self._loop_implem = self._loop_implem, None
         if lh is not None:
             lh.stop()
 
@@ -361,7 +362,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         for s in list(self._handlers):
             s.cancel()
 
-        self._ready.clear() 
+        self._ready.clear()
 
         self._default_sigint_handler.detach(self)
 
@@ -391,113 +392,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
 
     def time(self):
         return GLib.get_monotonic_time() / 1000000
-
-    # Methods for interacting with threads.
-
-#	def call_soon_threadsafe(self, callback, *args):
-#		raise NotImplementedError
-#
-#	def run_in_executor(self, executor, callback, *args):
-#		raise NotImplementedError
-#
-#	def set_default_executor(self, executor):
-#		raise NotImplementedError
-
-    # Network I/O methods returning Futures.
-
-#	def getaddrinfo(self, host, port, *, family=0, type=0, proto=0, flags=0):
-#		raise NotImplementedError
-#
-#	def getnameinfo(self, sockaddr, flags=0):
-#		raise NotImplementedError
-#
-#	def create_connection(self, protocol_factory, host=None, port=None, *,
-#						  ssl=None, family=0, proto=0, flags=0, sock=None,
-#						  local_addr=None):
-#		raise NotImplementedError
-#
-#	def start_serving(self, protocol_factory, host=None, port=None, *,
-#					  family=socket.AF_UNSPEC, flags=socket.AI_PASSIVE,
-#					  sock=None, backlog=100, ssl=None, reuse_address=None):
-#		"""A coroutine which creates a TCP server bound to host and
-#		port and whose result will be a list of socket objects which
-#		will later be handled by protocol_factory.
-#
-#		If host is an empty string or None all interfaces are assumed
-#		and a list of multiple sockets will be returned (most likely
-#		one for IPv4 and another one for IPv6).
-#
-#		family can be set to either AF_INET or AF_INET6 to force the
-#		socket to use IPv4 or IPv6. If not set it will be determined
-#		from host (defaults to AF_UNSPEC).
-#
-#		flags is a bitmask for getaddrinfo().
-#
-#		sock can optionally be specified in order to use a preexisting
-#		socket object.
-#
-#		backlog is the maximum number of queued connections passed to
-#		listen() (defaults to 100).
-#
-#		ssl can be set to an SSLContext to enable SSL over the
-#		accepted connections.
-#
-#		reuse_address tells the kernel to reuse a local socket in
-#		TIME_WAIT state, without waiting for its natural timeout to
-#		expire. If not specified will automatically be set to True on
-#		UNIX.
-#		"""
-#		raise NotImplementedError
-#
-#	def stop_serving(self, sock):
-#		"""Stop listening for incoming connections. Close socket."""
-#		raise NotImplementedError
-#
-#	def create_datagram_endpoint(self, protocol_factory,
-#								 local_addr=None, remote_addr=None, *,
-#								 family=0, proto=0, flags=0):
-#		raise NotImplementedError
-#
-#	def connect_read_pipe(self, protocol_factory, pipe):
-#		"""Register read pipe in eventloop.
-#
-#		protocol_factory should instantiate object with Protocol interface.
-#		pipe is file-like object already switched to nonblocking.
-#		Return pair (transport, protocol), where transport support
-#		ReadTransport ABC"""
-#		# The reason to accept file-like object instead of just file descriptor
-#		# is: we need to own pipe and close it at transport finishing
-#		# Can got complicated errors if pass f.fileno(),
-#		# close fd in pipe transport then close f and vise versa.
-#		raise NotImplementedError
-#
-#	def connect_write_pipe(self, protocol_factory, pipe):
-#		"""Register write pipe in eventloop.
-#
-#		protocol_factory should instantiate object with BaseProtocol interface.
-#		Pipe is file-like object already switched to nonblocking.
-#		Return pair (transport, protocol), where transport support
-#		WriteTransport ABC"""
-#		# The reason to accept file-like object instead of just file descriptor
-#		# is: we need to own pipe and close it at transport finishing
-#		# Can got complicated errors if pass f.fileno(),
-#		# close fd in pipe transport then close f and vise versa.
-#		raise NotImplementedError
-#
-#	def subprocess_shell(self, protocol_factory, cmd, *, stdin=subprocess.PIPE,
-#						 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-#						 **kwargs):
-#		raise NotImplementedError
-#
-#	def subprocess_exec(self, protocol_factory, *args, stdin=subprocess.PIPE,
-#						stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-#						**kwargs):
-#		raise NotImplementedError
-
-    # Ready-based callback registration methods.
-    # The add_*() methods return None.
-    # The remove_*() methods return True if something was removed,
-    # False if there was nothing to delete.
 
     # FIXME: these functions are not available on windows
     def add_reader(self, fd, callback, *args):
@@ -544,20 +438,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         except KeyError:
             return False
 
-    # Completion based I/O methods returning Futures.
-
-#	def sock_recv(self, sock, nbytes):
-#		raise NotImplementedError
-#
-#	def sock_sendall(self, sock, data):
-#		raise NotImplementedError
-#
-#	def sock_connect(self, sock, address):
-#		raise NotImplementedError
-#
-#	def sock_accept(self, sock):
-#		raise NotImplementedError
-
     # Signal handling.
 
     def add_signal_handler(self, sig, callback, *args):
@@ -583,9 +463,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         except KeyError:
             return False
 
-#TODO: move it into unix_events
-GLibEventLoop = BaseGLibEventLoop
-
 
 class _LoopImplem:
     def __init__(self, loop):
@@ -596,6 +473,7 @@ class _LoopImplem:
 
     def stop(self):
         raise NotImplementedError()
+
 
 class _GLibLoopImplem(_LoopImplem):
 
@@ -612,6 +490,7 @@ class _GLibLoopImplem(_LoopImplem):
     def stop(self):
         self._mainloop.quit()
 
+
 if Gtk:
     class _GtkLoopImplem(_LoopImplem):
         def run(self):
@@ -620,12 +499,13 @@ if Gtk:
         def stop(self):
             Gtk.main_quit()
 
+
 class _GApplicationLoopImplem(_LoopImplem):
 
     def __init__(self, loop, application):
         super().__init__(loop)
 
-        if not isinstance (application, Gio.Application):
+        if not isinstance(application, Gio.Application):
             raise TypeError("application must be a Gio.Application object")
 
         self._application = application
@@ -635,6 +515,7 @@ class _GApplicationLoopImplem(_LoopImplem):
 
     def stop(self):
         self._application.quit()
+
 
 class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
     """Default GLib event loop policy
@@ -669,12 +550,12 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
             then the loop associated with the main thread will use the default
             (NULL) GLib context (instead of creating a new one).
         """
-        self._full    = full
+        self._full = full
         self._default = default
 
         self._default_loop = None
 
-        self._policy  = unix_events.DefaultEventLoopPolicy()
+        self._policy = unix_events.DefaultEventLoopPolicy()
         self._policy.new_event_loop = self.new_event_loop
 
         self.get_event_loop = self._policy.get_event_loop
@@ -683,18 +564,11 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
 
         self._policy.set_child_watcher(GLibChildWatcher())
 
-        BaseGLibEventLoop.init_class()
-
         if threads:
             logger.info("GLib threads enabled")
             GObject.threads_init()
         else:
             logger.info("GLib threads not used")
-
-            def __new__(cls, *k, **kw):
-                raise RuntimeError("GLib threads not enabled (you should use %s(threads=True)" % self.__class__.__name__)
-
-            threading.Thread.__new__ = __new__
 
     def new_event_loop(self):
         if self._default and isinstance(threading.current_thread(), threading._MainThread):
@@ -722,22 +596,26 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
 if Gtk:
     class GtkEventLoopPolicy(GLibEventLoopPolicy):
         def __init__(self, *, full=False, threads=True):
-            super().__init__ (default=True, full=full, threads=threads)
+            super().__init__(default=True, full=full, threads=threads)
 
         def _new_default_loop(self):
             return GLibEventLoop(gtk=True)
 
+
 class GApplicationEventLoopPolicy(GLibEventLoopPolicy):
     def __init__(self, *, full=False, threads=True):
-        super().__init__ (default=True, full=full, threads=threads)
+        super().__init__(default=True, full=full, threads=threads)
 
-class wait_signal (futures.Future):
+
+class wait_signal(futures.Future):
+    """A future for waiting for a given signal to occur."""
+
     def __init__(self, obj, name, *, loop=None):
         super().__init__(loop=loop)
         self._obj = obj
         #FIXME: use  a weakref ?
         self._hnd = obj.connect(name, self._signal_callback)
-    
+
     def _signal_callback(self, *k):
         self._obj.disconnect(self._hnd)
         self.set_result(k)
@@ -747,7 +625,3 @@ class wait_signal (futures.Future):
         if self._obj:
             self._obj.disconnect(self._hnd)
             self._obj = None
-
-def get_default_loop(self):
-    return asyncio.get_event_loop_policy().get_default_loop()
-
