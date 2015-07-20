@@ -59,7 +59,7 @@ that implements the run() and quit() functions. MainLoop.run() atomically
 acquires a MainContext and repeatedly calls MainContext.iteration() until
 MainLoop.quit() is called.
 
-A MainContext is not bound to a particular thread, however is cannot be used
+A MainContext is not bound to a particular thread, however it cannot be used
 by multiple threads concurrently. If the context is owned by another thread,
 then MainLoop.run() will block until the context is released by the other
 thread.
