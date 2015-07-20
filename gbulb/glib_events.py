@@ -201,10 +201,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
                     l.call_soon_threadsafe(interrupt, l)
             return True
 
-    @staticmethod
-    def init_class():
-        if not hasattr(BaseGLibEventLoop, "_default_sigint_handler"):
-            BaseGLibEventLoop._default_sigint_handler = BaseGLibEventLoop.DefaultSigINTHandler()
+    _default_sigint_handler = DefaultSigINTHandler()
 
     def __init__(self, glib_context=None, gtk=False, application=None):
 
@@ -235,7 +232,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         # install a default handler for SIGINT
         # in the default context
         if self._context == GLib.main_context_default():
-            assert hasattr(self, "_default_sigint_handler"), "Must call BaseGLibEventLoop.init_class() first"
             self._default_sigint_handler.attach(self)
 
     def _dispatch(self):
