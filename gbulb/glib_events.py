@@ -612,16 +612,17 @@ class wait_signal(futures.Future):
 
     def __init__(self, obj, name, *, loop=None):
         super().__init__(loop=loop)
-        self._obj = obj
-        #FIXME: use  a weakref ?
+        self._obj = weakref.ref(obj, self.cancel)
         self._hnd = obj.connect(name, self._signal_callback)
 
     def _signal_callback(self, *k):
-        self._obj.disconnect(self._hnd)
+        obj = self._obj()
+        if obj is not None:
+            obj.disconnect(self._hnd)
         self.set_result(k)
 
     def cancel(self):
         super().cancel()
-        if self._obj:
-            self._obj.disconnect(self._hnd)
-            self._obj = None
+        obj = self._obj()
+        if obj is not None:
+            obj.disconnect(self._hnd)
