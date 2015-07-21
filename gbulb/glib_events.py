@@ -340,7 +340,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
 
 
 class GLibEventLoop(BaseGLibEventLoop):
-    def __init__(self, context=None, application=None):
+    def __init__(self, *, context=None, application=None):
         self._context = context or GLib.MainContext()
         self._application = application
         self._running = False
@@ -426,7 +426,7 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
 
     def _new_default_loop(self):
         return GLibEventLoop(
-            GLib.main_context_default(), application=self._application)
+            context=GLib.main_context_default(), application=self._application)
 
 
 if Gtk:
@@ -436,11 +436,12 @@ if Gtk:
         This loop supports recursion in Gtk, for example for implementing modal
         windows.
         """
-        def __init__(self, *args, **kwargs):
-            self._context = GLib.main_context_default()
+        def __init__(self, **kwargs):
             self._recursive = 0
             self._recurselock = threading.Lock()
-            super().__init__(*args, **kwargs)
+            kwargs['context'] = GLib.main_context_default()
+
+            super().__init__(**kwargs)
 
         def run(self):
             """Run the event loop until Gtk.main_quit is called.
