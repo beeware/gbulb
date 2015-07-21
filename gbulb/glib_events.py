@@ -400,7 +400,6 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         self._default_loop = None
         self._application = application
 
-        # WTF? can I get rid of this?
         self._policy = unix_events.DefaultEventLoopPolicy()
         self._policy.new_event_loop = self.new_event_loop
         self.get_event_loop = self._policy.get_event_loop
