@@ -1,13 +1,11 @@
 # gbulb - a PEP 3156 event loop based on GLib
 
 
-Gbulb is a python library that implements a [PEP 3156][PEP3156] interface for
-the [GLib main event loop][glibloop]. It is designed to be used together with
-the [tulip reference implementation][tulip].
+Gbulb is a Python library that implements a [PEP 3156][PEP3156] interface for
+the [GLib main event loop][glibloop] under UNIX-like systems.
 
 The code needs to be thoroughly tested, it should be considered as unstable for
 the moment.
-
 
 Anthony Baire
 
@@ -43,11 +41,12 @@ Apache 2.0
         asyncio.set_event_loop_policy(gbulb.GApplicationEventLoopPolicy())
 
         loop = asyncio.get_event_loop()
-        loop.run_forever(application = my_gapplication_object)
+        loop.run_forever(application=my_gapplication_object)
 
 ## Known issues
 
-- windows is not supported, sorry
+- Windows is not supported, sorry. If you are interested in this, please help
+  me get it working! I don't have Windows so I can't test it.
 
 ## Divergences with PEP 3156
 
@@ -66,7 +65,6 @@ thread.
 
 MainLoop.run() may be called recursively by the same thread (this is mainly
 used for implementing modal dialogs in Gtk).
-
 
 The issue: given a context, GLib provides no ways to know if there is an
 existing event loop running for that context. It implies the following
@@ -91,8 +89,6 @@ you should keep in mind that enclosed loops may be started at any time by
 third-party code calling directly GLib's primitives.
 
 
-
 [PEP3156]:  http://www.python.org/dev/peps/pep-3156/
-[tulip]:    http://code.google.com/p/tulip/
 [asyncio]:  https://pypi.python.org/pypi/asyncio
 [glibloop]: https://developer.gnome.org/glib/stable/glib-The-Main-Event-Loop.html
