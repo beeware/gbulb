@@ -1,7 +1,6 @@
-# vim:sw=4:sts=4:nosta:et:
 """PEP 3156 event loop based on GLib"""
 
-from gi.repository import GLib, GObject, Gio
+from gi.repository import GLib, Gio
 try:
     from gi.repository import Gtk
 except ImportError:
@@ -64,7 +63,7 @@ class GLibChildWatcher(unix_events.AbstractChildWatcher):
             returncode = os.WEXITSTATUS(status)
 
             #FIXME: Hack for adjusting invalid status returned by GLIB
-            #	Looks like there is a bug in glib or in pygobject
+            #    Looks like there is a bug in glib or in pygobject
             if returncode > 128:
                 returncode = 128 - returncode
         else:
@@ -154,7 +153,7 @@ class GLibHandle(events.Handle):
 # about SIGINT -> KeyboardInterrupt will never be raised asynchronously
 
 
-class GLibEventLoop(unix_events.SelectorEventLoop):
+class BaseGLibEventLoop(unix_events.SelectorEventLoop):
     """GLib base event loop
 
     This class handles only the operations related to Glib.MainContext objects.
@@ -200,18 +199,7 @@ class GLibEventLoop(unix_events.SelectorEventLoop):
 
     _default_sigint_handler = DefaultSigINTHandler()
 
-    def __init__(self, glib_context=None, gtk=False, application=None):
-
-        assert (glib_context is not None) + gtk + (application is not None) <= 1
-
-        self._gtk = gtk
-        self._application = application
-
-        if gtk or self._application is not None:
-            self._context = GLib.main_context_default()
-        else:
-            self._context = glib_context if glib_context else GLib.MainContext()
-
+    def __init__(self):
         self._readers = {}
         self._writers = {}
         self._sighandlers = {}
@@ -220,15 +208,15 @@ class GLibEventLoop(unix_events.SelectorEventLoop):
         self._ready = collections.deque()
         self._wakeup = None
         self._will_dispatch = False
-        self._loop_implem = None
         self._interrupted = False
-
-        super().__init__()
 
         # install a default handler for SIGINT
         # in the default context
         if self._context == GLib.main_context_default():
             self._default_sigint_handler.attach(self)
+
+        self._runlock = threading.Lock()
+        super().__init__()
 
     def create_task(self, coro):
         task = tasks.Task(coro, loop=self)
@@ -292,33 +280,21 @@ class GLibEventLoop(unix_events.SelectorEventLoop):
 
         return future.result()
 
-    def run_forever(self, gtk=False, application=None):
+    def run_forever(self):
         """Run the event loop until stop() is called."""
 
-        assert not (gtk and application is not None)
-
-        if self._loop_implem is not None:
+        if self.is_running():
             raise RuntimeError('Event loop is running.')
 
-        if application is not None:
-            assert self._context == GLib.main_context_default()
-            lh = _GApplicationLoopImplem(self, application)
-        elif gtk or self._gtk:
-            lh = _GtkLoopImplem(self)
-        elif self._application is not None:
-            lh = _GApplicationLoopImplem(self, self._application)
-            self._application = None
-        else:
-            lh = _GLibLoopImplem(self)
+        with self._runlock:
+            # We do not run the callbacks immediately. We need to call them
+            # when the Gtk loop is running, in case one callback calls .stop()
+            self._schedule_dispatch()
 
-        # We do not run the callbacks immediately. We need to call them
-        # when the Gtk loop is running, in case one callback calls .stop()
-        self._schedule_dispatch()
-
-        try:
-            self._loop_implem = lh
-
-            lh.run()
+            try:
+                self.run()
+            finally:
+                self.stop()
 
             if self._interrupted:
                 # ._interrupted is set when SIGINT is caught be the default
@@ -329,12 +305,10 @@ class GLibEventLoop(unix_events.SelectorEventLoop):
                 #
                 self._interrupted = False
                 raise KeyboardInterrupt()
-        finally:
-            self.stop()
 
     def is_running(self):
         """Return whether the event loop is currently running."""
-        return self._loop_implem is not None
+        return self._runlock.locked()
 
     def stop(self):
         """Stop the event loop as soon as reasonable.
@@ -342,9 +316,7 @@ class GLibEventLoop(unix_events.SelectorEventLoop):
         Exactly how soon that is may depend on the implementation, but
         no more I/O callbacks should be scheduled.
         """
-        lh, self._loop_implem = self._loop_implem, None
-        if lh is not None:
-            lh.stop()
+        raise NotImplementedError()
 
     def close(self):
         for fd in list(self._readers):
@@ -464,57 +436,46 @@ class GLibEventLoop(unix_events.SelectorEventLoop):
             return False
 
 
-class _LoopImplem:
-    def __init__(self, loop):
-        self._loop = loop
-
-    def run(self):
-        raise NotImplementedError()
-
-    def stop(self):
-        raise NotImplementedError()
-
-
-class _GLibLoopImplem(_LoopImplem):
-
-    def __init__(self, loop):
-        super().__init__(loop)
-
-        # We use the introspected MainLoop object directly, because the
-        # override in pygobject tampers with SIGINT
-        self._mainloop = GLib._introspection_module.MainLoop.new(self._loop._context, True)
-
-    def run(self):
-        self._mainloop.run()
-
-    def stop(self):
-        self._mainloop.quit()
-
-
-if Gtk:
-    class _GtkLoopImplem(_LoopImplem):
-        def run(self):
-            Gtk.main()
-
-        def stop(self):
-            Gtk.main_quit()
-
-
-class _GApplicationLoopImplem(_LoopImplem):
-
-    def __init__(self, loop, application):
-        super().__init__(loop)
-
-        if not isinstance(application, Gio.Application):
-            raise TypeError("application must be a Gio.Application object")
-
+class GLibEventLoop(BaseGLibEventLoop):
+    def __init__(self, context=None, application=None):
+        self._context = context or GLib.MainContext()
         self._application = application
 
+        if application is None:
+            # We use the introspected MainLoop object directly, because the
+            # override in pygobject tampers with SIGINT
+            self._mainloop = GLib._introspection_module.MainLoop.new(self._context, True)
+        super().__init__()
+
     def run(self):
-        self._application.run(None)
+        if self._application is not None:
+            self._application.run(None)
+        else:
+            self._mainloop.run()
 
     def stop(self):
-        self._application.quit()
+        if self._application is not None:
+            self._application.quit()
+        else:
+            self._mainloop.quit()
+
+    def run_forever(self, application=None):
+        """Run the event loop until stop() is called."""
+
+        if application is not None:
+            self.set_application(application)
+        super().run_forever()
+
+    def set_application(self, application):
+        if not isinstance(application, Gio.Application):
+            raise TypeError("application must be a Gio.Application object")
+        if self._application is not None:
+            raise ValueError("application is already set")
+        if self.is_running():
+            raise RuntimeError("You can't add the application to a loop that's already running.")
+        self._application = application
+        self._policy._application = application
+        del self._mainloop
 
 
 class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
@@ -525,86 +486,75 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
     threads by default have no event loop.
     """
 
-    #TODO add a parameter to synchronise with GLib's thead default contextes
-    #	(g_main_context_push_thread_default())
-    def __init__(self, *, full=False, default=True, threads=True):
-        """Constructor
-
-        threads     Multithread support (default: True)
-
-            Indicates whether you indend to use multiple python threads in your
-            application. When set this flags disables some optimisations
-            related to the GIL. (see GObject.threads_init())
-
-        full        Full GLib (default: False)
-
-            By default the policy is to create a GLibEventLoop object only for
-            the main thread. Other threads will use regular asyncio event loops.
-            If this flag is set, then this policy will use a glib event loop
-            for every thread. Use this parameter if you want your loops to
-            interact with modules written in other languages.
-
-        default     Use the default context (default: True)
-
-            Indicates whether you want to use the GLib default context. If set,
-            then the loop associated with the main thread will use the default
-            (NULL) GLib context (instead of creating a new one).
-        """
-        self._full = full
-        self._default = default
-
+    #TODO add a parameter to synchronise with GLib's thread default contexts
+    #   (g_main_context_push_thread_default())
+    def __init__(self, application=None):
         self._default_loop = None
+        self._application = application
 
+        # WTF? can I get rid of this?
         self._policy = unix_events.DefaultEventLoopPolicy()
         self._policy.new_event_loop = self.new_event_loop
-
         self.get_event_loop = self._policy.get_event_loop
         self.set_event_loop = self._policy.set_event_loop
         self.get_child_watcher = self._policy.get_child_watcher
 
         self._policy.set_child_watcher(GLibChildWatcher())
 
-        if threads:
-            logger.info("GLib threads enabled")
-            GObject.threads_init()
-        else:
-            logger.info("GLib threads not used")
-
     def new_event_loop(self):
-        if self._default and isinstance(threading.current_thread(), threading._MainThread):
+        """Create a new event loop and return it."""
+        if not self._default_loop and isinstance(threading.current_thread(), threading._MainThread):
             l = self.get_default_loop()
-        elif self._full:
-            l = GLibEventLoop()
         else:
-            l = unix_events.DefaultEventLoopPolicy.new_event_loop(self._policy)
+            l = GLibEventLoop()
+        l._policy = self
 
         return l
 
     def get_default_loop(self):
-
+        """Get the default event loop."""
         if not self._default_loop:
-            if not self._default:
-                raise RuntimeError("%s configured not to used a default loop" % self.__class__.__name__)
-
             self._default_loop = self._new_default_loop()
-
         return self._default_loop
 
     def _new_default_loop(self):
-        return GLibEventLoop(GLib.main_context_default())
+        return GLibEventLoop(
+            GLib.main_context_default(), application=self._application)
+
 
 if Gtk:
+    class GtkEventLoop(GLibEventLoop):
+        """Gtk-based event loop."""
+        def __init__(self, *args, **kwargs):
+            self._context = GLib.main_context_default()
+            super().__init__(*args, **kwargs)
+
+        def run(self):
+            if self._application is not None:
+                super().run()
+            else:
+                Gtk.main()
+
+        def stop(self):
+            if self._application is not None:
+                super().stop()
+            else:
+                Gtk.main_quit()
+
     class GtkEventLoopPolicy(GLibEventLoopPolicy):
-        def __init__(self, *, full=False, threads=True):
-            super().__init__(default=True, full=full, threads=threads)
-
+        """Gtk-based event loop policy. Use this if you are using Gtk."""
         def _new_default_loop(self):
-            return GLibEventLoop(gtk=True)
+            l = GtkEventLoop(application=self._application)
+            l._policy = self
+            return l
 
-
-class GApplicationEventLoopPolicy(GLibEventLoopPolicy):
-    def __init__(self, *, full=False, threads=True):
-        super().__init__(default=True, full=full, threads=threads)
+        def new_event_loop(self):
+            if not self._default_loop:
+                l = self.get_default_loop()
+            else:
+                l = GtkEventLoop()
+            l._policy = self
+            return l
 
 
 class wait_signal(futures.Future):
