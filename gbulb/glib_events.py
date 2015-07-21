@@ -258,7 +258,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
     def call_later(self, delay, callback, *args):
         return GLibHandle(
                 self,
-                GLib.Timeout(delay*1000 if delay > 0 else 0),
+                GLib.Timeout(delay*1000) if delay > 0 else GLib.Idle(),
                 False,
                 callback, args)
 
