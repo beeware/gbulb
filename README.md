@@ -71,7 +71,7 @@ existing event loop running for that context. It implies the following
 divergences with PEP 3156:
 
  - .run_forever() and .run_until_complete() are not guaranteed to run
-   immediatly. If the context is owned by another thread, then they will
+   immediately. If the context is owned by another thread, then they will
    block until the context is released by the other thread.
 
  - .stop() is relevant only when the currently running Glib.MainLoop object
@@ -83,10 +83,16 @@ divergences with PEP 3156:
     2. when the event loop has not even yet started because it is still
        trying to acquire the context
 
-It should be wiser not to use any recursion at all. GLibEventLoop will
-actually prevent you from doing that (in accordance with PEP 3156). However
-you should keep in mind that enclosed loops may be started at any time by
-third-party code calling directly GLib's primitives.
+It would be wiser not to use any recursion at all. GLibEventLoop will
+actually prevent you from doing that (in accordance with PEP 3156), however
+GtkEventLoop will allow you to call run() recursively. You should also keep
+in mind that enclosed loops may be started at any time by third-party code
+calling directly GLib's primitives.
+
+TODO: documentation about signal GLib allows catching signals from any
+thread. It is dispatched to the first handler whose flag is not yet raised.
+
+about SIGINT -> KeyboardInterrupt will never be raised asynchronously
 
 
 [PEP3156]:  http://www.python.org/dev/peps/pep-3156/

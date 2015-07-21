@@ -80,7 +80,7 @@ class GLibHandle(events.Handle):
         self._source = source
         self._repeat = repeat
         self._ready = False
-        source.set_callback(self.__class__._callback, self)
+        source.set_callback(self.__callback__, self)
         source.attach(loop._context)
         loop._handlers.add(self)
 
@@ -93,64 +93,18 @@ class GLibHandle(events.Handle):
         self._ready = False
         super()._run()
 
-    def _callback(self):
+    def __callback__(self, ignore_self):
         if not self._ready:
             self._ready = True
-            self._loop._ready.append(self)
 
-        self._loop._dispatch()
-
+        # __callback__ is called within the MainContext object, which is
+        # important in case that code includes a `Gtk.main()` or some such.
+        # Otherwise what happens is the loop is started recursively, but the
+        # callbacks don't finish firing, so they can't be rescheduled.
+        self._run()
         if not self._repeat:
             self._loop._handlers.discard(self)
         return self._repeat
-
-#
-# Divergences with PEP 3156
-#
-# In GLib, the concept of event loop is split in two classes: GLib.MainContext
-# and GLib.MainLoop.
-#
-# The thing is mostly implemented by MainContext. MainLoop is just a wrapper
-# that implements the run() and quit() functions. MainLoop.run() atomically
-# acquires a MainContext and repeatedly calls MainContext.iteration() until
-# MainLoop.quit() is called.
-#
-# A MainContext is not bound to a particular thread, however is cannot be used
-# by multiple threads concurrently. If the context is owned by another thread,
-# then MainLoop.run() will block until the context is released by the other
-# thread.
-#
-# MainLoop.run() may be called recursively by the same thread (this is mainly
-# used for implementing modal dialogs in Gtk).
-#
-#
-# The issue: given a context, GLib provides no ways to know if there is an
-# existing event loop running for that context. It implies the following
-# divergences with PEP 3156:
-#
-#  - .run_forever() and .run_until_complete() are not guaranteed to run
-#    immediatly. If the context is owned by another thread, then they will
-#    block until the context is released by the other thread.
-#
-#  - .stop() is relevant only when the currently running Glib.MainLoop object
-#    was created by this asyncio object (i.e. by calling .run_forever() or
-#    .run_until_complete()). The event loop will quit only when it regains
-#    control of the context. This can happen in two cases:
-#     1. when multiple event loop are enclosed (by creating new MainLoop
-#        objects and calling .run() recursively)
-#     2. when the event loop has not even yet started because it is still
-#        trying to acquire the context
-#
-# It should be wiser not to use any recursion at all. GLibEventLoop will
-# actually prevent you from doing that (in accordance with PEP 3156). However
-# you should keep in mind that enclosed loops may be started at any time by
-# third-party code calling directly GLib's primitives.
-#
-#
-# TODO: documentation about signal GLib allows catching signals from any
-# thread. It is dispatched to the first handler whose flag is not yet raised.
-#
-# about SIGINT -> KeyboardInterrupt will never be raised asynchronously
 
 
 class BaseGLibEventLoop(unix_events.SelectorEventLoop):
@@ -205,9 +159,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         self._sighandlers = {}
         self._chldhandlers = {}
         self._handlers = set()
-        self._ready = collections.deque()
-        self._wakeup = None
-        self._will_dispatch = False
         self._interrupted = False
 
         # install a default handler for SIGINT
@@ -215,7 +166,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         if self._context == GLib.main_context_default():
             self._default_sigint_handler.attach(self)
 
-        self._runlock = threading.Lock()
         super().__init__()
 
     def create_task(self, coro):
@@ -223,41 +173,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         if task._source_traceback:
             del task._source_traceback[-1]
         return task
-
-    def _dispatch(self):
-        # This is the only place where callbacks are actually *called*. All
-        # other places just add them to ready. Note: We run all currently
-        # scheduled callbacks, but not any callbacks scheduled by callbacks run
-        # this time around -- they will be run the next time (after another I/O
-        # poll). Use an idiom that is threadsafe without using locks.
-
-        self._will_dispatch = True
-
-        ntodo = len(self._ready)
-        for i in range(ntodo):
-            handle = self._ready.popleft()
-            if not handle._cancelled:
-                handle._run()
-
-        self._schedule_dispatch()
-        self._will_dispatch = False
-
-    def _schedule_dispatch(self):
-        if not self._ready or self._wakeup is not None:
-            return
-
-        def wakeup_cb(self):
-            self._dispatch()
-            if self._ready:
-                return True
-            else:
-                self._wakeup.destroy()
-                self._wakeup = None
-                return False
-
-        self._wakeup = GLib.Timeout(0)
-        self._wakeup.set_callback(wakeup_cb, self)
-        self._wakeup.attach(self._context)
 
     def run_until_complete(self, future, **kw):
         """Run the event loop until a Future is done.
@@ -283,32 +198,30 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
     def run_forever(self):
         """Run the event loop until stop() is called."""
 
-        if self.is_running():
+        if self.is_running() and Gtk and not isinstance(self, GtkEventLoop):
             raise RuntimeError('Event loop is running.')
 
-        with self._runlock:
-            # We do not run the callbacks immediately. We need to call them
-            # when the Gtk loop is running, in case one callback calls .stop()
-            self._schedule_dispatch()
+        recursive = self.is_running()
 
-            try:
-                self.run()
-            finally:
-                self.stop()
+        try:
+            self.run()
+        finally:
+            self.stop()
 
-            if self._interrupted:
-                # ._interrupted is set when SIGINT is caught be the default
-                # signal handler implemented in this module.
-                #
-                # If no user-defined handler is registered, then the default
-                # behaviour is just to raise KeyboardInterrupt
-                #
-                self._interrupted = False
-                raise KeyboardInterrupt()
+        if not recursive and self._interrupted:
+            # ._interrupted is set when SIGINT is caught be the default
+            # signal handler implemented in this module.
+            #
+            # If no user-defined handler is registered, then the default
+            # behaviour is just to raise KeyboardInterrupt
+            #
+            self._interrupted = False
+            raise KeyboardInterrupt()
+
 
     def is_running(self):
         """Return whether the event loop is currently running."""
-        return self._runlock.locked()
+        return self._running
 
     def stop(self):
         """Stop the event loop as soon as reasonable.
@@ -334,26 +247,16 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         for s in list(self._handlers):
             s.cancel()
 
-        self._ready.clear()
-
         self._default_sigint_handler.detach(self)
 
         super().close()
 
     # Methods scheduling callbacks.  All these return Handles.
     def call_soon(self, callback, *args):
-        h = events.Handle(callback, args, self)
-        self._ready.append(h)
-        if not self._will_dispatch:
-            self._schedule_dispatch()
-        return h
+        return self.call_later(0, callback, *args)
 
     def call_later(self, delay, callback, *args):
-
-        if delay <= 0:
-            return self.call_soon(callback, *args)
-        else:
-            return GLibHandle(
+        return GLibHandle(
                 self,
                 GLib.Timeout(delay*1000 if delay > 0 else 0),
                 False,
@@ -440,6 +343,7 @@ class GLibEventLoop(BaseGLibEventLoop):
     def __init__(self, context=None, application=None):
         self._context = context or GLib.MainContext()
         self._application = application
+        self._running = False
 
         if application is None:
             # We use the introspected MainLoop object directly, because the
@@ -448,10 +352,14 @@ class GLibEventLoop(BaseGLibEventLoop):
         super().__init__()
 
     def run(self):
-        if self._application is not None:
-            self._application.run(None)
-        else:
-            self._mainloop.run()
+        self._running = True
+        try:
+            if self._application is not None:
+                self._application.run(None)
+            else:
+                self._mainloop.run()
+        finally:
+            self._running = False
 
     def stop(self):
         if self._application is not None:
@@ -524,22 +432,46 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
 
 if Gtk:
     class GtkEventLoop(GLibEventLoop):
-        """Gtk-based event loop."""
+        """Gtk-based event loop.
+
+        This loop supports recursion in Gtk, for example for implementing modal
+        windows.
+        """
         def __init__(self, *args, **kwargs):
             self._context = GLib.main_context_default()
+            self._recursive = 0
+            self._recurselock = threading.Lock()
             super().__init__(*args, **kwargs)
 
         def run(self):
-            if self._application is not None:
-                super().run()
+            """Run the event loop until Gtk.main_quit is called.
+
+            Maybe be called multiple times to recursively start it again. This
+            is useful for implementing asynchronous-like dialogs in code that
+            is otherwise not asynchronous, for example modal dialogs.
+            """
+            if self.is_running():
+                with self._recurselock:
+                    self._recursive += 1
+                try:
+                    Gtk.main()
+                finally:
+                    with self._recurselock:
+                        self._recursive -= 1
             else:
-                Gtk.main()
+                super().run()
 
         def stop(self):
-            if self._application is not None:
-                super().stop()
-            else:
+            """Stop the inner-most event loop.
+
+            If it's also the outer-most event loop, the event loop will stop.
+            """
+            with self._recurselock:
+                r = self._recursive
+            if r > 0:
                 Gtk.main_quit()
+            else:
+                super().stop()
 
     class GtkEventLoopPolicy(GLibEventLoopPolicy):
         """Gtk-based event loop policy. Use this if you are using Gtk."""

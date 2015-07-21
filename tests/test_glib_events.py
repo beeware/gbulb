@@ -30,6 +30,15 @@ def glib_loop(glib_policy):
     l.close()
 
 
+@pytest.yield_fixture(scope='function')
+def gtk_loop(gtk_policy):
+    l = gtk_policy.new_event_loop()
+
+    yield l
+
+    l.close()
+
+
 class TestGLibEventLoopPolicy:
     def test_new_event_loop(self, glib_policy):
         a = glib_policy.new_event_loop()
@@ -38,10 +47,10 @@ class TestGLibEventLoopPolicy:
         assert a == glib_policy.get_default_loop()
         assert b != glib_policy.get_default_loop()
 
-    def test_new_event_loop_application(self, gtk_policy):
-        a = gtk_policy.new_event_loop()
+    def test_new_event_loop_application(self, glib_policy):
+        a = glib_policy.new_event_loop()
         a.set_application(Gio.Application())
-        b = gtk_policy.new_event_loop()
+        b = glib_policy.new_event_loop()
 
         assert b._application is None
 
@@ -64,6 +73,29 @@ class TestGtkEventLoopPolicy:
         b = gtk_policy.new_event_loop()
 
         assert b._application is None
+
+    def test_event_loop_recursion(self, gtk_loop):
+        loop_count = 0
+
+        def inner():
+            nonlocal loop_count
+            i = loop_count
+            print('starting loop', loop_count)
+            loop_count += 1
+
+            if loop_count == 10:
+                print('loop {} stopped'.format(i))
+                gtk_loop.stop()
+            else:
+                gtk_loop.call_soon(inner)
+                gtk_loop.run()
+                print('loop {} stopped'.format(i))
+                gtk_loop.stop()
+
+        gtk_loop.call_soon(inner)
+        gtk_loop.run_forever()
+
+        assert loop_count == 10
 
 
 class TestGLibEventLoop:
