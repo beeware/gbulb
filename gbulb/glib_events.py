@@ -150,6 +150,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
                     l.call_soon_threadsafe(interrupt, l)
             return True
 
+    # FIXME: only do this on init because otherwise just importing this module breaks SIGINT
     _default_sigint_handler = DefaultSigINTHandler()
 
     def __init__(self):
