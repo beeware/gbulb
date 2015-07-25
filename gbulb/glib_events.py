@@ -508,3 +508,16 @@ class wait_signal(futures.Future):
         obj = self._obj()
         if obj is not None:
             obj.disconnect(self._hnd)
+
+
+def install(gtk=False):
+    if gtk:
+        if not Gtk:
+            raise ValueError("Gtk is not available")
+        else:
+            policy = GtkEventLoopPolicy()
+    else:
+        policy = GLibEventLoopPolicy()
+
+    import asyncio
+    asyncio.set_event_loop_policy(policy)
