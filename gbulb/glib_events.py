@@ -3,10 +3,9 @@
 from gi.repository import GLib, Gio
 try:
     from gi.repository import Gtk
-except ImportError:
+except ImportError:  # pragma: no cover
     Gtk = None
 
-import collections
 import os
 import signal
 import threading
