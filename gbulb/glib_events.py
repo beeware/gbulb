@@ -117,7 +117,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
     class DefaultSigINTHandler:
         def __init__(self):
             s = GLib.unix_signal_source_new(signal.SIGINT)
-            s.set_callback(self.__class__._callback, self)
+            s.set_callback(self.__callback__, self)
             s.attach()
 
             self._source = s
@@ -139,7 +139,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
                 if l == loop:
                     self._loop = None
 
-        def _callback(self):
+        def __callback__(self, ignore_self):
             if self._loop:
                 l = self._loop()
                 if l:
