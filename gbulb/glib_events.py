@@ -218,7 +218,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
             self._interrupted = False
             raise KeyboardInterrupt()
 
-
     def is_running(self):
         """Return whether the event loop is currently running."""
         return self._running
@@ -521,3 +520,8 @@ def install(gtk=False):
 
     import asyncio
     asyncio.set_event_loop_policy(policy)
+
+
+def get_event_loop():
+    import asyncio
+    return asyncio.get_event_loop()
