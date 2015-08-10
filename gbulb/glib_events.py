@@ -1,17 +1,17 @@
 """PEP 3156 event loop based on GLib"""
 
-from gi.repository import GLib, Gio
-try:
-    from gi.repository import Gtk
-except ImportError:  # pragma: no cover
-    Gtk = None
-
 import os
 import signal
 import threading
 import weakref
 from asyncio import events, futures, tasks, unix_events
 from asyncio.log import logger
+
+from gi.repository import GLib, Gio
+
+from .utils import gtk_available
+
+__all__ = ['GLibEventLoop', 'GLibEventLoopPolicy']
 
 
 class GLibChildWatcher(unix_events.AbstractChildWatcher):
@@ -428,7 +428,11 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
             context=GLib.main_context_default(), application=self._application)
 
 
-if Gtk:
+if gtk_available():
+    __all__.extend(['GtkEventLoop', 'GtkEventLoopPolicy'])
+
+    from gi.repository import Gtk
+
     class GtkEventLoop(GLibEventLoop):
         """Gtk-based event loop.
 
@@ -486,42 +490,3 @@ if Gtk:
                 l = GtkEventLoop()
             l._policy = self
             return l
-
-
-class wait_signal(futures.Future):
-    """A future for waiting for a given signal to occur."""
-
-    def __init__(self, obj, name, *, loop=None):
-        super().__init__(loop=loop)
-        self._obj = weakref.ref(obj, self.cancel)
-        self._hnd = obj.connect(name, self._signal_callback)
-
-    def _signal_callback(self, *k):
-        obj = self._obj()
-        if obj is not None:
-            obj.disconnect(self._hnd)
-        self.set_result(k)
-
-    def cancel(self):
-        super().cancel()
-        obj = self._obj()
-        if obj is not None:
-            obj.disconnect(self._hnd)
-
-
-def install(gtk=False):
-    if gtk:
-        if not Gtk:
-            raise ValueError("Gtk is not available")
-        else:
-            policy = GtkEventLoopPolicy()
-    else:
-        policy = GLibEventLoopPolicy()
-
-    import asyncio
-    asyncio.set_event_loop_policy(policy)
-
-
-def get_event_loop():
-    import asyncio
-    return asyncio.get_event_loop()
