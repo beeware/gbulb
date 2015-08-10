@@ -1,16 +1,17 @@
 import asyncio
+import weakref
 
 __all__ = ['install', 'get_event_loop', 'wait_signal']
 
 _gtk_available = None
 
 
-def gtk_available():
+def gtk_available():  #pragma: no cover
     global _gtk_available
     if _gtk_available is None:
         try:
             from gi.repository import Gtk
-        except ImportError:  # pragma: no cover
+        except ImportError:
             Gtk = None
 
         _gtk_available = bool(Gtk)
