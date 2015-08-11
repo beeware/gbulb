@@ -361,6 +361,14 @@ class GLibEventLoop(BaseGLibEventLoop):
             self._running = False
 
     def stop(self):
+        """Stop the inner-most invocation of the event loop.
+
+        Typically, this will mean stopping the event loop completely.
+
+        Note that due to the nature of GLib's main loop, stopping may not be
+        immediate.
+        """
+
         if self._application is not None:
             self._application.quit()
         else:
@@ -449,7 +457,7 @@ if gtk_available():
         def run(self):
             """Run the event loop until Gtk.main_quit is called.
 
-            Maybe be called multiple times to recursively start it again. This
+            May be called multiple times to recursively start it again. This
             is useful for implementing asynchronous-like dialogs in code that
             is otherwise not asynchronous, for example modal dialogs.
             """
