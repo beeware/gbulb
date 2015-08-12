@@ -52,7 +52,7 @@ class wait_signal(asyncio.Future):
 
     def __init__(self, obj, name, *, loop=None):
         super().__init__(loop=loop)
-        self._obj = weakref.ref(obj, self.cancel)
+        self._obj = weakref.ref(obj, lambda s: self.cancel())
         self._hnd = obj.connect(name, self._signal_callback)
 
     def _signal_callback(self, *k):
@@ -62,7 +62,10 @@ class wait_signal(asyncio.Future):
         self.set_result(k)
 
     def cancel(self):
+        if self.cancelled():
+            return False
         super().cancel()
         obj = self._obj()
         if obj is not None:
             obj.disconnect(self._hnd)
+        return True

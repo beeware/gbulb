@@ -108,3 +108,10 @@ def test_wait_signal_cancel():
 
     assert cancelled
     assert not called
+
+
+def test_wait_signal_cancel_state():
+    from gbulb import wait_signal
+    m = wait_signal(mock.Mock(), 'anything')
+    assert m.cancel()
+    assert not m.cancel()
