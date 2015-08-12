@@ -42,11 +42,10 @@ def test_get_event_loop():
     assert asyncio.get_event_loop() is gbulb.get_event_loop()
 
 
-def test_wait_signal():
+def test_wait_signal(glib_loop):
     import asyncio
     from gi.repository import GObject
-    from gbulb import wait_signal, install, get_event_loop
-    install()
+    from gbulb import wait_signal
 
     class TestObject(GObject.GObject):
         __gsignals__ = {
@@ -55,7 +54,6 @@ def test_wait_signal():
 
     t = TestObject()
 
-    l = get_event_loop()
     def emitter():
         yield
         t.emit('foo', 'frozen brains tell no tales')
@@ -64,20 +62,19 @@ def test_wait_signal():
     @asyncio.coroutine
     def waiter():
         nonlocal called
-        r = yield from wait_signal(t, 'foo')
+        r = yield from wait_signal(t, 'foo', loop=glib_loop)
         assert r == (t, 'frozen brains tell no tales')
         called = True
 
-    l.run_until_complete(asyncio.wait([waiter(), emitter()], timeout=1))
+    glib_loop.run_until_complete(asyncio.wait([waiter(), emitter()], timeout=1, loop=glib_loop))
 
     assert called
 
 
-def test_wait_signal_cancel():
+def test_wait_signal_cancel(glib_loop):
     import asyncio
     from gi.repository import GObject
-    from gbulb import wait_signal, install, get_event_loop
-    install()
+    from gbulb import wait_signal
 
     class TestObject(GObject.GObject):
         __gsignals__ = {
@@ -86,7 +83,6 @@ def test_wait_signal_cancel():
 
     t = TestObject()
 
-    l = get_event_loop()
     def emitter():
         yield
         t.emit('foo', 'frozen brains tell no tales')
@@ -97,7 +93,7 @@ def test_wait_signal_cancel():
         nonlocal cancelled
         yield
 
-        r = wait_signal(t, 'foo')
+        r = wait_signal(t, 'foo', loop=glib_loop)
         @r.add_done_callback
         def caller(r):
             nonlocal called
@@ -107,7 +103,7 @@ def test_wait_signal_cancel():
         assert r.cancelled()
         cancelled = True
 
-    l.run_until_complete(asyncio.wait([waiter(), emitter()], timeout=1))
+    glib_loop.run_until_complete(asyncio.wait([waiter(), emitter()], timeout=1, loop=glib_loop))
 
     assert cancelled
     assert called
