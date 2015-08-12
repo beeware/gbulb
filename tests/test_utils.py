@@ -2,6 +2,8 @@ from unittest import mock
 
 import pytest
 
+from utils import glib_loop
+
 
 @pytest.mark.parametrize('gtk,gtk_available', [
     (False, False),

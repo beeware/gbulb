@@ -3,48 +3,18 @@ import pytest
 from unittest import mock
 from gi.repository import Gio
 
+from utils import glib_loop, glib_policy, setup_test_loop, check_loop_failures
+
 try:
     from gi.repository import Gtk
 except ImportError:
     Gtk = None
 
 
-def fail_test(loop, context):
-    loop.test_failure = context
-
-
-def setup_test_loop(loop):
-    loop.set_exception_handler(fail_test)
-    loop.test_failure = None
-
-
-def check_loop_failures(loop):
-    if loop.test_failure is not None:
-        pytest.fail('{message}: {exception}'.format(**loop.test_failure))
-
-
-@pytest.fixture
-def glib_policy():
-    from gbulb.glib_events import GLibEventLoopPolicy
-    return GLibEventLoopPolicy()
-
-
 @pytest.fixture
 def gtk_policy():
     from gbulb.glib_events import GtkEventLoopPolicy
     return GtkEventLoopPolicy()
-
-
-@pytest.yield_fixture(scope='function')
-def glib_loop(glib_policy):
-    l = glib_policy.new_event_loop()
-    setup_test_loop(l)
-
-    yield l
-
-    check_loop_failures(l)
-
-    l.close()
 
 
 @pytest.yield_fixture(scope='function')
