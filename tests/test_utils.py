@@ -70,6 +70,7 @@ def test_wait_signal():
 
     assert called
 
+
 def test_wait_signal_cancel():
     import asyncio
     from gi.repository import GObject
@@ -96,7 +97,7 @@ def test_wait_signal_cancel():
 
         r = wait_signal(t, 'foo')
         @r.add_done_callback
-        def caller():
+        def caller(r):
             nonlocal called
             called = True
 
@@ -107,7 +108,7 @@ def test_wait_signal_cancel():
     l.run_until_complete(asyncio.wait([waiter(), emitter()], timeout=1))
 
     assert cancelled
-    assert not called
+    assert called
 
 
 def test_wait_signal_cancel_state():
