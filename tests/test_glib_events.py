@@ -99,6 +99,43 @@ class TestGtkEventLoopPolicy:
 
 
 class TestGLibEventLoop:
+    def test_run_forever_recursion(self, glib_loop):
+        def play_it_again_sam():
+            with pytest.raises(RuntimeError):
+                glib_loop.run_forever()
+
+        h = glib_loop.call_soon(play_it_again_sam)
+        glib_loop.call_soon(glib_loop.stop)
+        glib_loop.run_forever()
+
+    def test_run_recursion(self, glib_loop):
+        passed = False
+        def first():
+            assert glib_loop._running
+
+            glib_loop.call_soon(second)
+            glib_loop.run()
+
+            assert glib_loop._running
+
+        def second():
+            nonlocal passed
+            assert glib_loop._running
+
+            glib_loop.stop()
+
+            assert glib_loop._running
+
+            passed = True
+
+        assert not glib_loop._running
+
+        glib_loop.call_soon(first)
+        glib_loop.run()
+
+        assert not glib_loop._running
+        assert passed
+
     def test_run(self, glib_loop):
         with mock.patch.object(glib_loop, '_mainloop') as ml:
             glib_loop.run()

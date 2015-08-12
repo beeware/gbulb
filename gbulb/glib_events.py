@@ -197,18 +197,17 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
 
     def run_forever(self):
         """Run the event loop until stop() is called."""
-
-        if self.is_running() and Gtk and not isinstance(self, GtkEventLoop):
-            raise RuntimeError('Event loop is running.')
-
-        recursive = self.is_running()
+        if self.is_running():
+            raise RuntimeError(
+                "Recursively calling run_forever is forbidden. "
+                "To recursively run the event loop, call run().")
 
         try:
             self.run()
         finally:
             self.stop()
 
-        if not recursive and self._interrupted:
+        if self._interrupted:
             # ._interrupted is set when SIGINT is caught be the default
             # signal handler implemented in this module.
             #
@@ -351,6 +350,8 @@ class GLibEventLoop(BaseGLibEventLoop):
         super().__init__()
 
     def run(self):
+        recursive = self.is_running()
+
         self._running = True
         try:
             if self._application is not None:
@@ -358,7 +359,8 @@ class GLibEventLoop(BaseGLibEventLoop):
             else:
                 self._mainloop.run()
         finally:
-            self._running = False
+            if not recursive:
+                self._running = False
 
     def stop(self):
         """Stop the inner-most invocation of the event loop.
