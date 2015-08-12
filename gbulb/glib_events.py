@@ -434,8 +434,10 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         return self._default_loop
 
     def _new_default_loop(self):
-        return GLibEventLoop(
+        l = GLibEventLoop(
             context=GLib.main_context_default(), application=self._application)
+        l._policy = self
+        return l
 
 
 if gtk_available():
