@@ -3,9 +3,7 @@
 import os
 import signal
 import threading
-import weakref
-from asyncio import events, futures, tasks, unix_events
-from asyncio.log import logger
+from asyncio import events, tasks, unix_events
 
 from gi.repository import GLib, Gio
 
@@ -114,57 +112,12 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
     Glib.MainLoop operations are implemented in the derived classes.
     """
 
-    class DefaultSigINTHandler:
-        def __init__(self):
-            s = GLib.unix_signal_source_new(signal.SIGINT)
-            s.set_callback(self.__callback__, self)
-            s.attach()
-
-            self._source = s
-            self._loop = None
-
-        def attach(self, loop):
-            if self._loop:
-                l = self._loop()
-                if l and l != loop:
-                    logger.warning(
-                        "Multiple event loops for the GLib default context. "
-                        "SIGINT may not be caught reliably")
-
-            self._loop = weakref.ref(loop)
-
-        def detach(self, loop):
-            if self._loop:
-                l = self._loop()
-                if l == loop:
-                    self._loop = None
-
-        def __callback__(self, ignore_self):
-            if self._loop:
-                l = self._loop()
-                if l:
-                    def interrupt(loop):
-                        loop._interrupted = True
-                        loop.stop()
-
-                    l.call_soon_threadsafe(interrupt, l)
-            return True
-
-    # FIXME: only do this on init because otherwise just importing this module breaks SIGINT
-    _default_sigint_handler = DefaultSigINTHandler()
-
     def __init__(self):
         self._readers = {}
         self._writers = {}
         self._sighandlers = {}
         self._chldhandlers = {}
         self._handlers = set()
-        self._interrupted = False
-
-        # install a default handler for SIGINT
-        # in the default context
-        if self._context == GLib.main_context_default():
-            self._default_sigint_handler.attach(self)
 
         super().__init__()
 
@@ -207,16 +160,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         finally:
             self.stop()
 
-        if self._interrupted:
-            # ._interrupted is set when SIGINT is caught be the default
-            # signal handler implemented in this module.
-            #
-            # If no user-defined handler is registered, then the default
-            # behaviour is just to raise KeyboardInterrupt
-            #
-            self._interrupted = False
-            raise KeyboardInterrupt()
-
     def is_running(self):
         """Return whether the event loop is currently running."""
         return self._running
@@ -244,8 +187,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
 
         for s in list(self._handlers):
             s.cancel()
-
-        self._default_sigint_handler.detach(self)
 
         super().close()
 
@@ -344,9 +285,7 @@ class GLibEventLoop(BaseGLibEventLoop):
         self._running = False
 
         if application is None:
-            # We use the introspected MainLoop object directly, because the
-            # override in pygobject tampers with SIGINT
-            self._mainloop = GLib._introspection_module.MainLoop.new(self._context, True)
+            self._mainloop = GLib.MainLoop(self._context)
         super().__init__()
 
     def run(self):

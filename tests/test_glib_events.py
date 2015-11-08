@@ -175,3 +175,13 @@ class TestGLibEventLoop:
         with pytest.raises(RuntimeError):
             with mock.patch.object(glib_loop, 'is_running', return_value=True):
                 glib_loop.set_application(app)
+
+
+def test_default_signal_handling(glib_loop):
+    import os
+    import signal
+
+    glib_loop.call_later(0.01, os.kill, os.getpid(), signal.SIGINT)
+
+    with pytest.raises(KeyboardInterrupt):
+        glib_loop.run_forever()
