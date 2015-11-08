@@ -15,12 +15,12 @@ Apache 2.0
 
 ## Homepage
 
-[https://bitbucket.org/a_ba/gbulb](https://bitbucket.org/a_ba/gbulb)
+[https://github.com/nathan-hoad/gbulb](https://github.com/nathan-hoad/gbulb)
 
 ## Requirements
-- python3.4 or python3.3+[asyncio][asyncio]
+- python3.4+ or python3.3 with [asyncio][asyncio]
 - pygobject
-- glib 
+- glib
 - gtk+3 (optional)
 
 ## Usage
@@ -28,17 +28,19 @@ Apache 2.0
 ### GLib event loop
 
         import asyncio, gbulb
-        asyncio.set_event_loop_policy(gbulb.GLibEventLoopPolicy())
+        gbulb.install()
+        asyncio.get_event_loop().run_forever()
 
 ### Gtk+ event loop *(suitable for GTK+ applications)*
 
         import asyncio, gbulb
-        asyncio.set_event_loop_policy(gbulb.GtkEventLoopPolicy())
+        gbulb.install(gtk=True)
+        asyncio.get_event_loop().run_forever()
 
 ### GApplication/GtkApplication event loop
 
         import asyncio, gbulb
-        asyncio.set_event_loop_policy(gbulb.GApplicationEventLoopPolicy())
+        gbulb.install(gtk=True)  # only necessary if you're using GtkApplication
 
         loop = asyncio.get_event_loop()
         loop.run_forever(application=my_gapplication_object)
@@ -53,7 +55,7 @@ Apache 2.0
 In GLib, the concept of event loop is split in two classes: GLib.MainContext
 and GLib.MainLoop.
 
-The thing is mostly implemented by MainContext. MainLoop is just a wrapper
+The event loop is mostly implemented by MainContext. MainLoop is just a wrapper
 that implements the run() and quit() functions. MainLoop.run() atomically
 acquires a MainContext and repeatedly calls MainContext.iteration() until
 MainLoop.quit() is called.
@@ -87,12 +89,7 @@ It would be wiser not to use any recursion at all. GLibEventLoop will
 actually prevent you from doing that (in accordance with PEP 3156), however
 GtkEventLoop will allow you to call run() recursively. You should also keep
 in mind that enclosed loops may be started at any time by third-party code
-calling directly GLib's primitives.
-
-TODO: documentation about signal GLib allows catching signals from any
-thread. It is dispatched to the first handler whose flag is not yet raised.
-
-about SIGINT -> KeyboardInterrupt will never be raised asynchronously
+calling GLib's primitives.
 
 
 [PEP3156]:  http://www.python.org/dev/peps/pep-3156/
