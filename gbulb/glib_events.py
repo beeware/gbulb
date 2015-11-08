@@ -170,7 +170,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         Exactly how soon that is may depend on the implementation, but
         no more I/O callbacks should be scheduled.
         """
-        raise NotImplementedError()
+        raise NotImplementedError()  # pragma: no cover
 
     def close(self):
         for fd in list(self._readers):

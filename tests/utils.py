@@ -1,7 +1,7 @@
 import pytest
 
 
-def fail_test(loop, context):
+def fail_test(loop, context):  # pragma: no cover
     loop.test_failure = context
 
 
@@ -10,7 +10,7 @@ def setup_test_loop(loop):
     loop.test_failure = None
 
 
-def check_loop_failures(loop):
+def check_loop_failures(loop):  # pragma: no cover
     if loop.test_failure is not None:
         pytest.fail('{message}: {exception}'.format(**loop.test_failure))
 
