@@ -23,7 +23,7 @@ class GLibChildWatcher(unix_events.AbstractChildWatcher):
     def add_child_handler(self, pid, callback, *args):
         self.remove_child_handler(pid)
 
-        source = GLib.child_watch_add(0, pid, self._glib_callback)
+        source = GLib.child_watch_add(0, pid, self.__callback__)
         self._sources[pid] = source, callback, args
 
     def remove_child_handler(self, pid):
@@ -45,7 +45,7 @@ class GLibChildWatcher(unix_events.AbstractChildWatcher):
     def __exit__(self, a, b, c):
         pass
 
-    def _glib_callback(self, pid, status):
+    def __callback__(self, pid, status):
 
         try:
             source, callback, args = self._sources.pop(pid)
@@ -120,12 +120,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         self._handlers = set()
 
         super().__init__()
-
-    def create_task(self, coro):
-        task = tasks.Task(coro, loop=self)
-        if task._source_traceback:
-            del task._source_traceback[-1]
-        return task
 
     def run_until_complete(self, future, **kw):
         """Run the event loop until a Future is done.
