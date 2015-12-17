@@ -235,7 +235,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         s = GLib.unix_fd_source_new(fd, GLib.IO_OUT)
 
         assert fd not in self._writers
-        self._writers[fd] = GLibHandle(self, s, True, callback, args)
+        self._writers[fd] = GLibHandle(self, s, False, callback, args)
 
     def remove_writer(self, fd):
         if not isinstance(fd, int):

@@ -161,6 +161,18 @@ class TestBaseGLibEventLoop:
         glib_loop.add_writer(wfd, callback)
         glib_loop.run_forever()
 
+    def test_add_writer_no_repeat(self, glib_loop):
+        import socket
+        s = socket.socket()
+        fd = s.fileno()
+
+        def callback():
+            pass
+
+        glib_loop.add_writer(s, callback)
+
+        assert not glib_loop._writers[fd]._repeat
+
     def test_add_reader(self, glib_loop):
         import os
         rfd, wfd = os.pipe()
