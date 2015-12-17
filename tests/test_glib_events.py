@@ -257,6 +257,19 @@ class TestBaseGLibEventLoop:
 
         assert called, 'call_at handler didnt fire'
 
+    def test_call_soon_threadsafe(self, glib_loop):
+        called = False
+
+        def handler():
+            nonlocal called
+            called = True
+            glib_loop.stop()
+
+        glib_loop.call_soon_threadsafe(handler)
+        glib_loop.run_forever()
+
+        assert called, 'call_soon_threadsafe handler didnt fire'
+
 
 class TestGLibEventLoop:
     def test_run_forever_recursion(self, glib_loop):

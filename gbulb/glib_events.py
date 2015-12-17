@@ -188,6 +188,8 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
     def call_soon(self, callback, *args):
         return self.call_later(0, callback, *args)
 
+    call_soon_threadsafe = call_soon
+
     def call_later(self, delay, callback, *args):
         return GLibHandle(
                 self,
