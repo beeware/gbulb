@@ -12,7 +12,8 @@ from utils import glib_loop
     (True, True),
 ])
 def test_install(gtk, gtk_available):
-    from gbulb import install
+    import gbulb
+    import sys
 
     called = False
 
@@ -25,13 +26,22 @@ def test_install(gtk, gtk_available):
         else:
             assert cls_name == 'GLibEventLoopPolicy'
 
-    with mock.patch('gbulb.utils.gtk_available', return_value=gtk_available):
+    if gtk and 'gbulb.gtk' in sys.modules:
+        del sys.modules['gbulb.gtk']
+
+    mock_repository = mock.Mock()
+    if not gtk_available:
+        del mock_repository.Gtk
+
+    with mock.patch.dict('sys.modules', {'gi.repository': mock_repository}):
         with mock.patch('asyncio.set_event_loop_policy', set_event_loop_policy):
+            import_error = gtk and not gtk_available
             try:
-                install(gtk=gtk)
-            except ValueError:
-                assert gtk and not gtk_available
+                gbulb.install(gtk=gtk)
+            except ImportError:
+                assert import_error
             else:
+                assert not import_error
                 assert called
 
 

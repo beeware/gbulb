@@ -3,20 +3,6 @@ import weakref
 
 __all__ = ['install', 'get_event_loop', 'wait_signal']
 
-_gtk_available = None
-
-
-def gtk_available():  #pragma: no cover
-    global _gtk_available
-    if _gtk_available is None:
-        try:
-            from gi.repository import Gtk
-        except ImportError:
-            Gtk = None
-
-        _gtk_available = bool(Gtk)
-    return _gtk_available
-
 
 def install(gtk=False):
     """Set the default event loop policy.
@@ -30,11 +16,8 @@ def install(gtk=False):
     """
 
     if gtk:
-        if not gtk_available():
-            raise ValueError("Gtk is not available")
-        else:
-            from .glib_events import GtkEventLoopPolicy
-            policy = GtkEventLoopPolicy()
+        from .gtk import GtkEventLoopPolicy
+        policy = GtkEventLoopPolicy()
     else:
         from .glib_events import GLibEventLoopPolicy
         policy = GLibEventLoopPolicy()
