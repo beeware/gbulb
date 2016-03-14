@@ -13,7 +13,7 @@ except ImportError:  # pragma: no cover
 
 @pytest.fixture
 def gtk_policy():
-    from gbulb.glib_events import GtkEventLoopPolicy
+    from gbulb.gtk import GtkEventLoopPolicy
     return GtkEventLoopPolicy()
 
 
@@ -48,7 +48,7 @@ class TestGLibEventLoopPolicy:
 @pytest.mark.skipif(not Gtk, reason="Gtk is not available")
 class TestGtkEventLoopPolicy:
     def test_new_event_loop(self, gtk_policy):
-        from gbulb.glib_events import GtkEventLoop
+        from gbulb.gtk import GtkEventLoop
         a = gtk_policy.new_event_loop()
         b = gtk_policy.new_event_loop()
 

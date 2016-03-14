@@ -7,7 +7,7 @@ except ImportError:
 
 
 setup(name='gbulb',
-      version='0.1',
+      version='0.2',
       description='GLib event loop for tulip (PEP 3156)',
       author='Anthony Baire',
       author_email='ayba@free.fr',
