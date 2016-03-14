@@ -12,7 +12,7 @@ from utils import glib_loop
     (True, True),
 ])
 def test_install(gtk, gtk_available):
-    import gbulb
+    from gbulb import install
     import sys
 
     called = False
@@ -37,7 +37,7 @@ def test_install(gtk, gtk_available):
         with mock.patch('asyncio.set_event_loop_policy', set_event_loop_policy):
             import_error = gtk and not gtk_available
             try:
-                gbulb.install(gtk=gtk)
+                install(gtk=gtk)
             except ImportError:
                 assert import_error
             else:
