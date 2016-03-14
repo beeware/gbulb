@@ -9,24 +9,22 @@ except ImportError:
 setup(name='gbulb',
       version='0.2',
       description='GLib event loop for tulip (PEP 3156)',
-      author='Anthony Baire',
-      author_email='ayba@free.fr',
+      author='Nathan Hoad',
+      author_email='nathan@getoffmalawn.com',
       license='Apache 2.0',
-      url='https://bitbucket.org/a_ba/gbulb',
+      url='http://github.com/nathan-hoad/gbulb',
       packages=['gbulb'],
-      data_files=['README.md', 'examples/test-gtk.py'],
-      long_description="""Gbulb is a python library that implements a PEP 3156 interface for the GLib main event loop. It is designed to be used together with the tulip reference implementation.
-
-This is a work in progress. The code is experimental and may break at any time.
-""",
+      data_files=['README.md', 'examples/test-gtk.py', 'examples/gtk.py', 'examples/wait_signal.py'],
+      long_description="""Gbulb is a python library that implements a PEP 3156 interface for the GLib main event loop. It is designed to be used together with the tulip reference implementation.""",
       classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 3 - Beta",
         "Intended Audience :: Developers",
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: POSIX",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.3",
         "Programming Language :: Python :: 3.4",
+        "Programming Language :: Python :: 3.5",
         "Topic :: Software Development :: Libraries :: Python Modules",
         ]
 )
