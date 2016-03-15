@@ -90,7 +90,9 @@ class GLibHandle(events.Handle):
         # callbacks don't finish firing, so they can't be rescheduled.
         self._run()
         if not self._repeat:
+            self._source.destroy()
             self._loop._handlers.discard(self)
+
         return self._repeat
 
 
