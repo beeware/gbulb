@@ -1,0 +1,7 @@
+include AUTHORS
+include CHANGELOG.md
+include README.md
+recursive-include examples *
+recursive-exclude examples *.pyc *.pyo
+recursive-include tests *
+recursive-exclude tests *.pyc *.pyo

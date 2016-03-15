@@ -14,7 +14,6 @@ setup(name='gbulb',
       license='Apache 2.0',
       url='http://github.com/nathan-hoad/gbulb',
       packages=['gbulb'],
-      data_files=['README.md', 'examples/test-gtk.py', 'examples/gtk.py', 'examples/wait_signal.py'],
       long_description="""Gbulb is a python library that implements a PEP 3156 interface for the GLib main event loop. It is designed to be used together with the tulip reference implementation.""",
       classifiers=[
         "Development Status :: 3 - Beta",
