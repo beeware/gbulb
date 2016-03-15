@@ -2,6 +2,7 @@
 from gi.repository import Gtk
 import asyncio
 import gbulb
+import gbulb.gtk
 
 
 class ProgressBarWindow(Gtk.Window):
@@ -63,10 +64,11 @@ class ProgressBarWindow(Gtk.Window):
             self._running.cancel()
 
 
-asyncio.set_event_loop_policy(gbulb.GtkEventLoopPolicy())
+asyncio.set_event_loop_policy(gbulb.gtk.GtkEventLoopPolicy())
 
 win = ProgressBarWindow()
-win.connect("delete-event", Gtk.main_quit)
+win.connect("delete-event", lambda *args: loop.stop())
 win.show_all()
 
-asyncio.get_event_loop().run_forever()
+loop = asyncio.get_event_loop()
+loop.run_forever()
