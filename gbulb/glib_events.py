@@ -68,7 +68,7 @@ class GLibChildWatcher(unix_events.AbstractChildWatcher):
 
 
 class GLibHandle(events.Handle):
-    def __init__(self, loop, source, repeat, callback, args):
+    def __init__(self, *, loop, source, repeat, callback, args):
         super().__init__(callback, args, loop)
 
         self._loop = loop
@@ -184,10 +184,11 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
 
     def call_later(self, delay, callback, *args):
         return GLibHandle(
-                self,
-                GLib.Timeout(delay*1000) if delay > 0 else GLib.Idle(),
-                False,
-                callback, args)
+            loop=self,
+            source=GLib.Timeout(delay*1000) if delay > 0 else GLib.Idle(),
+            repeat=False,
+            callback=callback,
+            args=args)
 
     def call_at(self, when, callback, *args):
         return self.call_later(when - self.time(), callback, *args)
@@ -205,7 +206,12 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         s = GLib.unix_fd_source_new(fd, GLib.IO_IN)
 
         assert fd not in self._readers
-        self._readers[fd] = GLibHandle(self, s, True, callback, args)
+        self._readers[fd] = GLibHandle(
+            loop=self,
+            source=s,
+            repeat=True,
+            callback=callback,
+            args=args)
 
     def remove_reader(self, fd):
         if not isinstance(fd, int):
@@ -227,7 +233,13 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         s = GLib.unix_fd_source_new(fd, GLib.IO_OUT)
 
         assert fd not in self._writers
-        self._writers[fd] = GLibHandle(self, s, False, callback, args)
+
+        self._writers[fd] = GLibHandle(
+            loop=self,
+            source=s,
+            repeat=False,
+            callback=callback,
+            args=args)
 
     def remove_writer(self, fd):
         if not isinstance(fd, int):
@@ -254,7 +266,13 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
                 raise ValueError("signal not supported")
 
         assert sig not in self._sighandlers
-        self._sighandlers[sig] = GLibHandle(self, s, True, callback, args)
+
+        self._sighandlers[sig] = GLibHandle(
+            loop=self,
+            source=s,
+            repeat=True,
+            callback=callback,
+            args=args)
 
     def remove_signal_handler(self, sig):
         self._check_signal(sig)
