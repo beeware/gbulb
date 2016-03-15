@@ -178,7 +178,26 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
 
     # Methods scheduling callbacks.  All these return Handles.
     def call_soon(self, callback, *args):
-        return self.call_later(0, callback, *args)
+        source = GLib.Idle()
+
+        # XXX: we set the source's priority to high for the following scenario:
+        #
+        # - loop.sock_connect() begins asynchronous connection
+        # - this adds a write callback to detect when the connection has
+        #   completed
+        # - this write callback sets the result of a future
+        # - future.Future schedules callbacks with call_later.
+        # - the callback for this future removes the write callback
+        # - GLib.Idle() has a much lower priority than that of the GSource for
+        #   the writer, so it never gets scheduled.
+        source.set_priority(GLib.PRIORITY_HIGH)
+
+        return GLibHandle(
+            loop=self,
+            source=source,
+            repeat=False,
+            callback=callback,
+            args=args)
 
     call_soon_threadsafe = call_soon
 
@@ -237,7 +256,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         self._writers[fd] = GLibHandle(
             loop=self,
             source=s,
-            repeat=False,
+            repeat=True,
             callback=callback,
             args=args)
 

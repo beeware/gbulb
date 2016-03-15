@@ -95,18 +95,6 @@ class TestBaseGLibEventLoop:
         glib_loop.add_writer(wfd, callback)
         glib_loop.run_forever()
 
-    def test_add_writer_no_repeat(self, glib_loop):
-        import socket
-        s = socket.socket()
-        fd = s.fileno()
-
-        def callback():
-            pass
-
-        glib_loop.add_writer(s, callback)
-
-        assert not glib_loop._writers[fd]._repeat
-
     def test_add_reader(self, glib_loop):
         import os
         rfd, wfd = os.pipe()
@@ -202,6 +190,62 @@ class TestBaseGLibEventLoop:
         glib_loop.run_forever()
 
         assert called, 'call_at handler didnt fire'
+
+    def test_call_soon_priority_order(self, glib_loop):
+        items = []
+
+        def handler(i):
+            items.append(i)
+
+        for i in range(10):
+            glib_loop.call_soon(handler, i)
+        glib_loop.call_soon(glib_loop.stop)
+
+        glib_loop.run_forever()
+
+        assert items
+        assert items == sorted(items)
+
+    def test_call_soon_priority(self, glib_loop):
+        def remover(fd):
+            nonlocal removed
+            assert glib_loop.remove_writer(fd)
+
+            removed = True
+            glib_loop.stop()
+
+        def callback(fut):
+            fut.set_result(None)
+
+        def timeout():
+            nonlocal timeout_occurred
+            timeout_occurred = True
+            glib_loop.stop()
+
+        def run_test(fd):
+            import asyncio
+            from gi.repository import GLib
+
+            fut = asyncio.Future(loop=glib_loop)
+            fut.add_done_callback(lambda r: remover(fd))
+            glib_loop.add_writer(fd, callback, fut)
+            glib_loop.call_later(0.1, timeout)
+            glib_loop.run_forever()
+
+            assert not timeout_occurred
+            assert removed
+
+        import os
+        rfd, wfd = os.pipe()
+
+        removed = False
+        timeout_occurred = False
+
+        try:
+            run_test(wfd)
+        finally:
+            os.close(rfd)
+            os.close(wfd)
 
     def test_call_soon_threadsafe(self, glib_loop):
         called = False
