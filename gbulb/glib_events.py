@@ -74,7 +74,6 @@ class GLibHandle(events.Handle):
         self._loop = loop
         self._source = source
         self._repeat = repeat
-        self._ready = False
         source.set_callback(self.__callback__, self)
         source.attach(loop._context)
         loop._handlers.add(self)
@@ -84,14 +83,7 @@ class GLibHandle(events.Handle):
         self._source.destroy()
         self._loop._handlers.discard(self)
 
-    def _run(self):
-        self._ready = False
-        super()._run()
-
     def __callback__(self, ignore_self):
-        if not self._ready:
-            self._ready = True
-
         # __callback__ is called within the MainContext object, which is
         # important in case that code includes a `Gtk.main()` or some such.
         # Otherwise what happens is the loop is started recursively, but the
