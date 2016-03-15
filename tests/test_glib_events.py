@@ -3,30 +3,7 @@ import pytest
 from unittest import mock
 from gi.repository import Gio
 
-from utils import glib_loop, glib_policy, setup_test_loop, check_loop_failures
-
-try:
-    from gi.repository import Gtk
-except ImportError:  # pragma: no cover
-    Gtk = None
-
-
-@pytest.fixture
-def gtk_policy():
-    from gbulb.gtk import GtkEventLoopPolicy
-    return GtkEventLoopPolicy()
-
-
-@pytest.yield_fixture(scope='function')
-def gtk_loop(gtk_policy):
-    l = gtk_policy.new_event_loop()
-    setup_test_loop(l)
-
-    yield l
-
-    check_loop_failures(l)
-
-    l.close()
+from utils import glib_loop, glib_policy
 
 
 class TestGLibEventLoopPolicy:
@@ -43,49 +20,6 @@ class TestGLibEventLoopPolicy:
         b = glib_policy.new_event_loop()
 
         assert b._application is None
-
-
-@pytest.mark.skipif(not Gtk, reason="Gtk is not available")
-class TestGtkEventLoopPolicy:
-    def test_new_event_loop(self, gtk_policy):
-        from gbulb.gtk import GtkEventLoop
-        a = gtk_policy.new_event_loop()
-        b = gtk_policy.new_event_loop()
-
-        assert isinstance(a, GtkEventLoop)
-        assert isinstance(b, GtkEventLoop)
-        assert a != b
-        assert a == gtk_policy.get_default_loop()
-
-    def test_new_event_loop_application(self, gtk_policy):
-        a = gtk_policy.new_event_loop()
-        a.set_application(Gtk.Application())
-        b = gtk_policy.new_event_loop()
-
-        assert b._application is None
-
-    def test_event_loop_recursion(self, gtk_loop):
-        loop_count = 0
-
-        def inner():
-            nonlocal loop_count
-            i = loop_count
-            print('starting loop', loop_count)
-            loop_count += 1
-
-            if loop_count == 10:
-                print('loop {} stopped'.format(i))
-                gtk_loop.stop()
-            else:
-                gtk_loop.call_soon(inner)
-                gtk_loop.run()
-                print('loop {} stopped'.format(i))
-                gtk_loop.stop()
-
-        gtk_loop.call_soon(inner)
-        gtk_loop.run_forever()
-
-        assert loop_count == 10
 
 
 class TestBaseGLibEventLoop:
