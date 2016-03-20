@@ -247,6 +247,38 @@ class TestBaseGLibEventLoop:
             os.close(rfd)
             os.close(wfd)
 
+    def test_add_writer_multiple_calls(self, glib_loop):
+        import os
+        rfd, wfd = os.pipe()
+
+        timeout_occurred = False
+
+        expected_i = 10
+        i = 0
+
+        def callback():
+            nonlocal i
+            i += 1
+
+            if i == expected_i:
+                glib_loop.stop()
+
+        def timeout():
+            nonlocal timeout_occurred
+            timeout_occurred = True
+            glib_loop.stop()
+
+        try:
+            glib_loop.add_writer(wfd, callback)
+            glib_loop.call_later(0.1, timeout)
+            glib_loop.run_forever()
+        finally:
+            os.close(rfd)
+            os.close(wfd)
+
+        assert not timeout_occurred
+        assert i == expected_i
+
     def test_call_soon_threadsafe(self, glib_loop):
         called = False
 
