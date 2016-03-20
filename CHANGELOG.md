@@ -5,6 +5,7 @@
    asyncio
  - Connecting sockets now works as intended
  - Implement `call_soon_threadsafe`.
+ - Lots of tests
 
 ### Changed
  - **API BREAKAGE** No implicit Gtk import anymore. `GtkEventLoop` and `GtkEventLoopPolicy` have
