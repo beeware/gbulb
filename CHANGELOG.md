@@ -1,5 +1,5 @@
 # Change Log
-## [Unreleased]
+## [0.2] - 2016-03-20
 ### Added
  - `gbulb.install` to simplify installation of a GLib-based event loop in
    asyncio
