@@ -1,4 +1,4 @@
-include AUTHORS
+include AUTHORS.rst
 include CHANGELOG.md
 include README.md
 recursive-include examples *
