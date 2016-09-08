@@ -74,9 +74,9 @@ class GLibHandle(events.Handle):
         self._loop = loop
         self._source = source
         self._repeat = repeat
+        loop._handlers.add(self)
         source.set_callback(self.__callback__, self)
         source.attach(loop._context)
-        loop._handlers.add(self)
 
     def cancel(self):
         super().cancel()
