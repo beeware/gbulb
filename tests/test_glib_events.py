@@ -193,11 +193,13 @@ class TestBaseGLibEventLoop:
             now = glib_loop.time()
             glib_loop.stop()
 
-            assert now >= s + 1
+            print(now, s)
+            import math
+            assert math.isclose(now, s, abs_tol=0.1)
 
         s = glib_loop.time()
 
-        glib_loop.call_at(s+1, handler)
+        glib_loop.call_at(s+0.1, handler)
         glib_loop.run_forever()
 
         assert called, 'call_at handler didnt fire'
