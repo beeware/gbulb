@@ -68,6 +68,8 @@ class GLibChildWatcher(unix_events.AbstractChildWatcher):
 
 
 class GLibHandle(events.Handle):
+    __slots__ = ('_source', '_repeat')
+
     def __init__(self, *, loop, source, repeat, callback, args):
         super().__init__(callback, args, loop)
 
