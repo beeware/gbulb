@@ -1,4 +1,9 @@
 # Change Log
+## [0.3] - 2016-09-13
+
+### Fixed
+ - gbulb will no longer occasionally leak memory when used with threads.
+
 ## [0.2] - 2016-03-20
 ### Added
  - `gbulb.install` to simplify installation of a GLib-based event loop in
