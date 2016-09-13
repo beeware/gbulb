@@ -73,7 +73,6 @@ class GLibHandle(events.Handle):
     def __init__(self, *, loop, source, repeat, callback, args):
         super().__init__(callback, args, loop)
 
-        self._loop = loop
         self._source = source
         self._repeat = repeat
         loop._handlers.add(self)
