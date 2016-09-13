@@ -22,6 +22,17 @@ class TestGLibEventLoopPolicy:
         assert b._application is None
 
 
+class TestGLibHandle:
+    def test_attachment_order(self, glib_loop):
+        def add(handle):
+            glib_loop._context.iteration(True)
+            assert handle not in glib_loop._handlers
+            assert not handle._source.is_destroyed(), "GSource was completed prior to it being in the handlers set."
+
+        with mock.patch.object(glib_loop, '_handlers', add=add) as _handlers:
+            handle = glib_loop.call_soon(print)
+
+
 class TestBaseGLibEventLoop:
     def test_add_signal_handler(self, glib_loop):
         import os
