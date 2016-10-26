@@ -177,8 +177,15 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
 
         super().close()
 
+    def _check_not_coroutine(self, callback, name):
+        from asyncio import coroutines
+        if (coroutines.iscoroutine(callback) or
+                coroutines.iscoroutinefunction(callback)):
+            raise TypeError("coroutines cannot be used with {}()".format(name))
+
     # Methods scheduling callbacks.  All these return Handles.
     def call_soon(self, callback, *args):
+        self._check_not_coroutine(callback, 'call_soon')
         source = GLib.Idle()
 
         # XXX: we set the source's priority to high for the following scenario:
@@ -203,6 +210,8 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
     call_soon_threadsafe = call_soon
 
     def call_later(self, delay, callback, *args):
+        self._check_not_coroutine(callback, 'call_later')
+
         return GLibHandle(
             loop=self,
             source=GLib.Timeout(delay*1000) if delay > 0 else GLib.Idle(),
@@ -211,6 +220,8 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
             args=args)
 
     def call_at(self, when, callback, *args):
+        self._check_not_coroutine(callback, 'call_at')
+
         return self.call_later(when - self.time(), callback, *args)
 
     def time(self):

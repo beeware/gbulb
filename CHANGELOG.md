@@ -1,4 +1,10 @@
 # Change Log
+## [0.4] - 2016-10-26
+
+### Fixed
+ - gbulb will no longer allow you to schedule coroutines with call_at,
+   call_soon and call_later, the same as asyncio.
+
 ## [0.3] - 2016-09-13
 
 ### Fixed

@@ -204,6 +204,27 @@ class TestBaseGLibEventLoop:
 
         assert called, 'call_at handler didnt fire'
 
+    def test_call_soon_no_coroutine(self, glib_loop):
+        async def coro():
+            pass
+
+        with pytest.raises(TypeError):
+            glib_loop.call_soon(coro)
+
+    def test_call_later_no_coroutine(self, glib_loop):
+        async def coro():
+            pass
+
+        with pytest.raises(TypeError):
+            glib_loop.call_later(1, coro)
+
+    def test_call_at_no_coroutine(self, glib_loop):
+        async def coro():
+            pass
+
+        with pytest.raises(TypeError):
+            glib_loop.call_at(1, coro)
+
     def test_call_soon_priority_order(self, glib_loop):
         items = []
 
