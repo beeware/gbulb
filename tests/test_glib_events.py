@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from unittest import mock
@@ -31,6 +33,11 @@ class TestGLibHandle:
 
         with mock.patch.object(glib_loop, '_handlers', add=add) as _handlers:
             handle = glib_loop.call_soon(print)
+
+
+@asyncio.coroutine
+def no_op_coro():
+    pass
 
 
 class TestBaseGLibEventLoop:
@@ -106,6 +113,8 @@ class TestBaseGLibEventLoop:
         glib_loop.add_writer(wfd, callback)
         glib_loop.run_forever()
 
+        assert called, 'callback handler didnt fire'
+
     def test_add_reader(self, glib_loop):
         import os
         rfd, wfd = os.pipe()
@@ -122,6 +131,8 @@ class TestBaseGLibEventLoop:
 
         glib_loop.add_reader(rfd, callback)
         glib_loop.run_forever()
+
+        assert called, 'callback handler didnt fire'
 
     def test_add_reader_file(self, glib_loop):
         import os
@@ -205,25 +216,16 @@ class TestBaseGLibEventLoop:
         assert called, 'call_at handler didnt fire'
 
     def test_call_soon_no_coroutine(self, glib_loop):
-        async def coro():
-            pass
-
         with pytest.raises(TypeError):
-            glib_loop.call_soon(coro)
+            glib_loop.call_soon(no_op_coro)
 
     def test_call_later_no_coroutine(self, glib_loop):
-        async def coro():
-            pass
-
         with pytest.raises(TypeError):
-            glib_loop.call_later(1, coro)
+            glib_loop.call_later(1, no_op_coro)
 
     def test_call_at_no_coroutine(self, glib_loop):
-        async def coro():
-            pass
-
         with pytest.raises(TypeError):
-            glib_loop.call_at(1, coro)
+            glib_loop.call_at(1, no_op_coro)
 
     def test_call_soon_priority_order(self, glib_loop):
         items = []
