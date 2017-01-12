@@ -1,4 +1,10 @@
 # Change Log
+## [0.5] - 2017-01-12
+
+### Fixed
+ - Fixed issue with readers and writers not being added to the loop properly as
+   a result of http://bugs.python.org/issue28369.
+
 ## [0.4] - 2016-10-26
 
 ### Fixed

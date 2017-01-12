@@ -161,7 +161,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
 
     def close(self):
         for fd in list(self._readers):
-            self.remove_reader(fd)
+            self._remove_reader(fd)
 
         for fd in list(self._writers):
             self.remove_writer(fd)
@@ -228,11 +228,11 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         return GLib.get_monotonic_time() / 1000000
 
     # FIXME: these functions are not available on windows
-    def add_reader(self, fd, callback, *args):
+    def _add_reader(self, fd, callback, *args):
         if not isinstance(fd, int):
             fd = fd.fileno()
 
-        self.remove_reader(fd)
+        self._remove_reader(fd)
 
         s = GLib.unix_fd_source_new(fd, GLib.IO_IN)
 
@@ -244,7 +244,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
             callback=callback,
             args=args)
 
-    def remove_reader(self, fd):
+    def _remove_reader(self, fd):
         if not isinstance(fd, int):
             fd = fd.fileno()
 
@@ -255,11 +255,11 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
         except KeyError:
             return False
 
-    def add_writer(self, fd, callback, *args):
+    def _add_writer(self, fd, callback, *args):
         if not isinstance(fd, int):
             fd = fd.fileno()
 
-        self.remove_writer(fd)
+        self._remove_writer(fd)
 
         s = GLib.unix_fd_source_new(fd, GLib.IO_OUT)
 
@@ -272,7 +272,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
             callback=callback,
             args=args)
 
-    def remove_writer(self, fd):
+    def _remove_writer(self, fd):
         if not isinstance(fd, int):
             fd = fd.fileno()
 
@@ -282,6 +282,14 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
 
         except KeyError:
             return False
+
+    # Disgusting backwards compatibility hack to ensure gbulb keeps working
+    # with Python versions that don't have http://bugs.python.org/issue28369
+    if not hasattr(unix_events.SelectorEventLoop, 'add_reader'):
+        add_reader = _add_reader
+        add_writer = _add_writer
+        remove_writer = _remove_writer
+        remove_reader = _remove_reader
 
     # Signal handling.
 
