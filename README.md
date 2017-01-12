@@ -4,10 +4,10 @@
 Gbulb is a Python library that implements a [PEP 3156][PEP3156] interface for
 the [GLib main event loop][glibloop] under UNIX-like systems.
 
-The code needs to be thoroughly tested, it should be considered as unstable for
-the moment.
+As much as possible, except where noted below, it mimics asyncio's interface.
+If you notice any differences, please report them.
 
-Anthony Baire
+Nathan Hoad
 
 ## Licence
 
