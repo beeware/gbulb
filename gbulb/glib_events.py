@@ -285,7 +285,7 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
 
     # Disgusting backwards compatibility hack to ensure gbulb keeps working
     # with Python versions that don't have http://bugs.python.org/issue28369
-    if not hasattr(unix_events.SelectorEventLoop, 'add_reader'):
+    if not hasattr(unix_events.SelectorEventLoop, '_add_reader'):
         add_reader = _add_reader
         add_writer = _add_writer
         remove_writer = _remove_writer
