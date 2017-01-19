@@ -1,4 +1,9 @@
 # Change Log
+## [0.5.1] - 2017-01-20
+
+### Fixed
+ - Fixed breakage on Python versions older than 3.5.3, caused by 0.5.0. Thanks Brecht De Vlieger!
+
 ## [0.5] - 2017-01-12
 
 ### Fixed
