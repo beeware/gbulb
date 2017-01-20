@@ -7,7 +7,7 @@ from asyncio import events, tasks, unix_events
 
 from gi.repository import GLib, Gio
 
-__all__ = ['GLibEventLoop', 'GLibEventLoopPolicy']
+__all__ = ['GLibEventLoop', 'GLibEventLoopPolicy', 'GLibChildWatcher']
 
 
 class GLibChildWatcher(unix_events.AbstractChildWatcher):
