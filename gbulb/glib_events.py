@@ -422,3 +422,6 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
             context=GLib.main_context_default(), application=self._application)
         l._policy = self
         return l
+
+    def set_child_watcher(self, watcher):
+        pass
