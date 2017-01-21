@@ -26,13 +26,30 @@ class TestGLibEventLoopPolicy:
 
 class TestGLibHandle:
     def test_attachment_order(self, glib_loop):
-        def add(handle):
-            glib_loop._context.iteration(True)
-            assert handle not in glib_loop._handlers
-            assert not handle._source.is_destroyed(), "GSource was completed prior to it being in the handlers set."
+        call_manager = mock.Mock()
 
-        with mock.patch.object(glib_loop, '_handlers', add=add) as _handlers:
-            handle = glib_loop.call_soon(print)
+        from gbulb.glib_events import GLibHandle
+
+        # stub this out, we don't care if it gets called or not
+        call_manager.loop.get_debug = lambda: True
+
+        h = GLibHandle(
+            loop=call_manager.loop,
+            source=call_manager.source,
+            repeat=True,
+            callback=call_manager.callback,
+            args=(),
+        )
+
+        print(call_manager.mock_calls)
+
+        expected_calls = [
+            mock.call.loop._handlers.add(h),
+            mock.call.source.set_callback(h.__callback__, h),
+            mock.call.source.attach(call_manager.loop._context),
+        ]
+
+        assert call_manager.mock_calls == expected_calls
 
 
 @asyncio.coroutine
