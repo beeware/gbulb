@@ -9,6 +9,19 @@ from utils import glib_loop, glib_policy
 
 
 class TestGLibEventLoopPolicy:
+    def test_set_child_watcher(self, glib_policy):
+        from gbulb.glib_events import GLibChildWatcher
+        with pytest.raises(TypeError):
+            glib_policy.set_child_watcher(5)
+
+        glib_policy.set_child_watcher(None)
+        assert isinstance(glib_policy.get_child_watcher(), GLibChildWatcher)
+
+        g = GLibChildWatcher()
+        glib_policy.set_child_watcher(g)
+
+        assert glib_policy.get_child_watcher() is g
+
     def test_new_event_loop(self, glib_policy):
         a = glib_policy.new_event_loop()
         b = glib_policy.new_event_loop()

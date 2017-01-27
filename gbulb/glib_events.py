@@ -392,14 +392,33 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
     def __init__(self, application=None):
         self._default_loop = None
         self._application = application
+        self._watcher_lock = threading.Lock()
 
+        self._watcher = None
         self._policy = unix_events.DefaultEventLoopPolicy()
         self._policy.new_event_loop = self.new_event_loop
         self.get_event_loop = self._policy.get_event_loop
         self.set_event_loop = self._policy.set_event_loop
-        self.get_child_watcher = self._policy.get_child_watcher
 
-        self._policy.set_child_watcher(GLibChildWatcher())
+    def get_child_watcher(self):
+        if self._watcher is None:
+            with self._watcher_lock:
+                if self._watcher is None:
+                    self._watcher = GLibChildWatcher()
+        return self._watcher
+
+    def set_child_watcher(self, watcher):
+        """Set a child watcher.
+
+        Must be an an instance of GLibChildWatcher, as it ties in with GLib
+        appropriately.
+        """
+
+        if watcher is not None and not isinstance(watcher, GLibChildWatcher):
+            raise TypeError("Only GLibChildWatcher is supported!")
+
+        with self._watcher_lock:
+            self._watcher = watcher
 
     def new_event_loop(self):
         """Create a new event loop and return it."""

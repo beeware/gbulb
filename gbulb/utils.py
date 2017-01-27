@@ -13,6 +13,9 @@ def install(gtk=False):
     Set ``gtk`` to True if you intend to use Gtk in your application.
 
     If ``gtk`` is True and Gtk is not available, will raise `ValueError`.
+
+    Note that this class performs some monkey patching of asyncio to ensure
+    correct functionality.
     """
 
     if gtk:
@@ -22,6 +25,11 @@ def install(gtk=False):
         from .glib_events import GLibEventLoopPolicy
         policy = GLibEventLoopPolicy()
 
+    # There are some libraries that use SafeChildWatcher directly (which is
+    # completely reasonable), so we have to ensure that it is our version. I'm
+    # sorry, I know this isn't great but it's basically the best that we have.
+    from .glib_events import GLibChildWatcher
+    asyncio.SafeChildWatcher = GLibChildWatcher
     asyncio.set_event_loop_policy(policy)
 
 
