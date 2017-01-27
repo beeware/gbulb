@@ -1,4 +1,14 @@
 # Change Log
+## [0.5.3] - 2017-01-27
+
+### Fixed
+ - Implemented child watcher setters and getters to allow writing tests with
+   asynctest for code using gbulb.
+
+ - `gbulb.install` now monkey patches `asyncio.SafeChildWatcher` to
+   `gbulb.glib_events.GLibChildWatcher`, to ensure that any library code that
+   uses it will use the correct child watcher.
+
 ## [0.5.2] - 2017-01-21
 
 ### Fixed
