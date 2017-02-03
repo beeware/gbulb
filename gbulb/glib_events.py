@@ -10,7 +10,7 @@ from gi.repository import GLib, Gio
 __all__ = ['GLibEventLoop', 'GLibEventLoopPolicy']
 
 
-class GLibChildWatcher(unix_events.AbstractChildWatcher):
+class GLibChildWatcher(AbstractChildWatcher):
     def __init__(self):
         self._sources = {}
 
@@ -52,9 +52,9 @@ class GLibChildWatcher(unix_events.AbstractChildWatcher):
 
         GLib.source_remove(source)
 
-        if os.WIFSIGNALED(status):
+        if hasattr(os, "WIFSIGNALED") and os.WIFSIGNALED(status):
             returncode = -os.WTERMSIG(status)
-        elif os.WIFEXITED(status):
+        elif hasattr(os, "WIFEXITED") and os.WIFEXITED(status):
             returncode = os.WEXITSTATUS(status)
 
             #FIXME: Hack for adjusting invalid status returned by GLIB
@@ -97,22 +97,55 @@ class GLibHandle(events.Handle):
         return self._repeat
 
 
-class BaseGLibEventLoop(unix_events.SelectorEventLoop):
-    """GLib base event loop
-
-    This class handles only the operations related to Glib.MainContext objects.
-
-    Glib.MainLoop operations are implemented in the derived classes.
-    """
-
-    def __init__(self):
-        self._readers = {}
-        self._writers = {}
-        self._sighandlers = {}
-        self._chldhandlers = {}
+class GLibEventLoop(BaseGLibEventLoop):
+    def __init__(self, *, context=None, application=None):
         self._handlers = set()
 
+        self._context = context or GLib.MainContext()
+        self._application = application
+        self._running = False
+
+        if application is None:
+            self._mainloop = GLib.MainLoop(self._context)
         super().__init__()
+
+    # Used by parent classes to create a GLibHandle
+    def _create_handle(self, *_, **kwargs):
+        return GLibHandle(**kwargs)
+
+    def _check_not_coroutine(self, callback, name):
+        from asyncio import coroutines
+        if (coroutines.iscoroutine(callback) or
+                coroutines.iscoroutinefunction(callback)):
+            raise TypeError("coroutines cannot be used with {}()".format(name))
+
+    def close(self):
+        for s in list(self._handlers):
+            s.cancel()
+
+        super().close()
+
+    def run(self):
+        recursive = self.is_running()
+        if not recursive and hasattr(events, "_get_running_loop") and events._get_running_loop():
+            raise RuntimeError(
+                'Cannot run the event loop while another loop is running')
+
+        if not recursive:
+            self._running = True
+            if hasattr(events, "_set_running_loop"):
+                events._set_running_loop(self)
+
+        try:
+            if self._application is not None:
+                self._application.run(None)
+            else:
+                self._mainloop.run()
+        finally:
+            if not recursive:
+                self._running = False
+                if hasattr(events, "_set_running_loop"):
+                    events._set_running_loop(None)
 
     def run_until_complete(self, future, **kw):
         """Run the event loop until a Future is done.
@@ -135,8 +168,11 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
 
         return future.result()
 
-    def run_forever(self):
+    def run_forever(self, application=None):
         """Run the event loop until stop() is called."""
+        if application is not None:
+            self.set_application(application)
+        
         if self.is_running():
             raise RuntimeError(
                 "Recursively calling run_forever is forbidden. "
@@ -146,42 +182,6 @@ class BaseGLibEventLoop(unix_events.SelectorEventLoop):
             self.run()
         finally:
             self.stop()
-
-    def is_running(self):
-        """Return whether the event loop is currently running."""
-        return self._running
-
-    def stop(self):
-        """Stop the event loop as soon as reasonable.
-
-        Exactly how soon that is may depend on the implementation, but
-        no more I/O callbacks should be scheduled.
-        """
-        raise NotImplementedError()  # pragma: no cover
-
-    def close(self):
-        for fd in list(self._readers):
-            self._remove_reader(fd)
-
-        for fd in list(self._writers):
-            self.remove_writer(fd)
-
-        for sig in list(self._sighandlers):
-            self.remove_signal_handler(sig)
-
-        for pid in list(self._chldhandlers):
-            self._remove_child_handler(pid)
-
-        for s in list(self._handlers):
-            s.cancel()
-
-        super().close()
-
-    def _check_not_coroutine(self, callback, name):
-        from asyncio import coroutines
-        if (coroutines.iscoroutine(callback) or
-                coroutines.iscoroutinefunction(callback)):
-            raise TypeError("coroutines cannot be used with {}()".format(name))
 
     # Methods scheduling callbacks.  All these return Handles.
     def call_soon(self, callback, *args):
@@ -335,8 +335,14 @@ class GLibEventLoop(BaseGLibEventLoop):
 
     def run(self):
         recursive = self.is_running()
+        if not recursive and events._get_running_loop():
+            raise RuntimeError(
+                'Cannot run the event loop while another loop is running')
 
-        self._running = True
+        if not recursive:
+            self._running = True
+            events._set_running_loop(self)
+
         try:
             if self._application is not None:
                 self._application.run(None)
@@ -345,6 +351,7 @@ class GLibEventLoop(BaseGLibEventLoop):
         finally:
             if not recursive:
                 self._running = False
+                events._set_running_loop(None)
 
     def stop(self):
         """Stop the inner-most invocation of the event loop.
@@ -359,13 +366,6 @@ class GLibEventLoop(BaseGLibEventLoop):
             self._application.quit()
         else:
             self._mainloop.quit()
-
-    def run_forever(self, application=None):
-        """Run the event loop until stop() is called."""
-
-        if application is not None:
-            self.set_application(application)
-        super().run_forever()
 
     def set_application(self, application):
         if not isinstance(application, Gio.Application):
@@ -395,7 +395,7 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         self._watcher_lock = threading.Lock()
 
         self._watcher = None
-        self._policy = unix_events.DefaultEventLoopPolicy()
+        self._policy = asyncio.DefaultEventLoopPolicy()
         self._policy.new_event_loop = self.new_event_loop
         self.get_event_loop = self._policy.get_event_loop
         self.set_event_loop = self._policy.set_event_loop
