@@ -1,14 +1,28 @@
 """PEP 3156 event loop based on GLib"""
 
+import asyncio
 import os
 import signal
+import socket
+import sys
 import threading
-from asyncio import events, tasks, unix_events
+from asyncio import base_events, events, futures, sslproto, tasks
+
 
 from gi.repository import GLib, Gio
 
+from . import transports
+
 __all__ = ['GLibEventLoop', 'GLibEventLoopPolicy']
 
+
+# The Windows `asyncio` implementation doesn't actually use this, but
+# `glib` abstracts so nicely over this that we can use it on any platform
+if sys.platform == "win32":
+    class AbstractChildWatcher:
+        pass
+else:
+    from asyncio.unix_events import AbstractChildWatcher
 
 class GLibChildWatcher(AbstractChildWatcher):
     def __init__(self):
@@ -67,6 +81,7 @@ class GLibChildWatcher(AbstractChildWatcher):
         callback(pid, returncode, *args)
 
 
+
 class GLibHandle(events.Handle):
     __slots__ = ('_source', '_repeat')
 
@@ -97,33 +112,291 @@ class GLibHandle(events.Handle):
         return self._repeat
 
 
-class GLibEventLoop(BaseGLibEventLoop):
-    def __init__(self, *, context=None, application=None):
+class GLibBaseEventLoop(base_events.BaseEventLoop):
+    def __init__(self, context=None):
         self._handlers = set()
-
+        
+        self._accept_futures = {}
         self._context = context or GLib.MainContext()
-        self._application = application
-        self._running = False
-
-        if application is None:
-            self._mainloop = GLib.MainLoop(self._context)
+        self._selector = self
+        
         super().__init__()
+    
+    def close(self):
+        for future in self._accept_futures.values():
+            future.cancel()
+        self._accept_futures.clear()
+        
+        for s in list(self._handlers):
+            s.cancel()
+        self._handlers.clear()
+        
+        super().close()
 
-    # Used by parent classes to create a GLibHandle
-    def _create_handle(self, *_, **kwargs):
-        return GLibHandle(**kwargs)
+    def select(self, timeout=None):
+        self._context.acquire()
+        try:
+            if timeout is None:
+                self._context.iteration(True)
+            elif timeout <= 0:
+                self._context.iteration(False)
+            else:
+                # Schedule fake callback that will trigger an event and cause the loop to terminate
+                # after the given number of seconds
+                handle = GLibHandle(
+                        loop=self,
+                        source=GLib.Timeout(timeout*1000),
+                        repeat=False,
+                        callback=lambda: None,
+                        args=())
+                try:
+                    self._context.iteration(True)
+                finally:
+                    handle.cancel()
+            return ()  # Available events are dispatched immediately and not returned
+        finally:
+            self._context.release()
+
+
+
+    def _make_socket_transport(self, sock, protocol, waiter=None, *,
+                               extra=None, server=None):
+        """Create socket transport."""
+        return transports.SocketTransport(self, sock, protocol, waiter, extra, server)
+
+    def _make_ssl_transport(self, rawsock, protocol, sslcontext, waiter=None,
+                            *, server_side=False, server_hostname=None,
+                            extra=None, server=None):
+        """Create SSL transport."""
+        if not sslproto._is_sslproto_available():
+            raise NotImplementedError("Proactor event loop requires Python 3.5"
+                                      " or newer (ssl.MemoryBIO) to support "
+                                      "SSL")
+
+        ssl_protocol = sslproto.SSLProtocol(self, protocol, sslcontext, waiter,
+                                            server_side, server_hostname)
+        transports.SocketTransport(self, rawsock, ssl_protocol, extra=extra, server=server)
+        return ssl_protocol._app_transport
+
+    def _make_datagram_transport(self, sock, protocol,
+                                 address=None, waiter=None, extra=None):
+        """Create datagram transport."""
+        raise NotImplementedError
+
+    def _make_read_pipe_transport(self, pipe, protocol, waiter=None,
+                                  extra=None):
+        """Create read pipe transport."""
+        raise NotImplementedError
+
+    def _make_write_pipe_transport(self, pipe, protocol, waiter=None,
+                                   extra=None):
+        """Create write pipe transport."""
+        raise NotImplementedError
+
+    @asyncio.coroutine
+    def _make_subprocess_transport(self, protocol, args, shell,
+                                   stdin, stdout, stderr, bufsize,
+                                   extra=None, **kwargs):
+        """Create subprocess transport."""
+        raise NotImplementedError
+
+    def _write_to_self(self):
+        self._context.wakeup()
+
+    def _process_events(self, event_list):
+        """Process selector events."""
+        pass  # This is already done in `.select()`
+
+    def _start_serving(self, protocol_factory, sock,
+                       sslcontext=None, server=None, backlog=100):
+
+        def server_loop(f=None):
+            try:
+                if f is not None:
+                    (conn, addr) = f.result()
+                    protocol = protocol_factory()
+                    if sslcontext is not None:
+                        self._make_ssl_transport(
+                            conn, protocol, sslcontext, server_side=True,
+                            extra={'peername': addr}, server=server)
+                    else:
+                        self._make_socket_transport(
+                            conn, protocol,
+                            extra={'peername': addr}, server=server)
+                if self.is_closed():
+                    return
+                f = self.sock_accept(sock)
+            except OSError as exc:
+                if sock.fileno() != -1:
+                    self.call_exception_handler({
+                        'message': 'Accept failed on a socket',
+                        'exception': exc,
+                        'socket': sock,
+                    })
+                    sock.close()
+            except futures.CancelledError:
+                sock.close()
+            else:
+                self._accept_futures[sock.fileno()] = f
+                f.add_done_callback(server_loop)
+
+        self.call_soon(server_loop)
+
+    def _stop_serving(self, sock):
+        if sock.fileno() in self._accept_futures:
+            self._accept_futures[sock.fileno()].cancel()
+        sock.close()
+
+
+
 
     def _check_not_coroutine(self, callback, name):
+        """Check whether the given callback is a coroutine or not."""
         from asyncio import coroutines
         if (coroutines.iscoroutine(callback) or
                 coroutines.iscoroutinefunction(callback)):
             raise TypeError("coroutines cannot be used with {}()".format(name))
 
-    def close(self):
-        for s in list(self._handlers):
-            s.cancel()
+    def _channel_from_socket(self, sock):
+        """Create GLib IOChannel for the given socket object."""
+        if not isinstance(sock, int):
+            fd = sock.fileno()
+        else:
+            fd = sock
+        
+        if sys.platform == "win32":
+            return GLib.IOChannel.win32_new_socket(fd)
+        else:
+            return GLib.IOChannel.unix_new(fd)
 
-        super().close()
+    def _delayed(self, source, callback=None, *args):
+        """Create a future that will complete after the given GLib Source object has become ready
+        and the data it tracks has been processed."""
+        future = None
+        def handle_ready(*args):
+            try:
+                if callback:
+                    (done, result) = callback(*args)
+                else:
+                    (done, result) = (True, None)
+
+                if done:
+                    future.set_result(result)
+                    future.handle.cancel()
+            except Exception as error:
+                if not future.cancelled():
+                    future.set_exception(error)
+                future.handle.cancel()
+
+        # Create future and properly wire up it's cancellation with the
+        # handle's cancellation machinery
+        future = self.create_future()
+        future.handle = GLibHandle(
+            loop=self,
+            source=source,
+            repeat=True,
+            callback=handle_ready,
+            args=args
+        )
+        return future
+
+    def _socket_handle_errors(self, sock):
+        """Raise exceptions for error states (SOL_ERROR) on the given socket object."""
+        errno = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+        if errno != 0:
+            if sys.platform == "win32":
+                msg = socket.errorTab.get(errno, "Error {0}".format(errno))
+                raise OSError(errno, "[WinError {0}] {1}".format(errno, msg), None, errno)
+            else:
+                raise OSError(errno, os.strerror(errno))
+
+
+
+
+    def sock_connect(self, sock, address):
+        # Request connection on socket (it is expected that `sock` is already non-blocking)
+        try:
+            sock.connect(address)
+        except BlockingIOError:
+            pass
+
+        # Create glib IOChannel for socket and wait for it to become writable
+        channel = self._channel_from_socket(sock)
+        source = GLib.io_create_watch(channel, GLib.IO_OUT)
+        def sock_finish_connect(sock):
+            self._socket_handle_errors(sock)
+            return (True, sock)
+        return self._delayed(source, sock_finish_connect, sock)
+
+    def sock_accept(self, sock):
+        channel = self._channel_from_socket(sock)
+        source = GLib.io_create_watch(channel, GLib.IO_IN)
+        def sock_connection_received(sock):
+            return (True, sock.accept())
+
+        @asyncio.coroutine
+        def accept_coro(future, conn):
+            # Coroutine closing the accept socket if the future is cancelled
+            try:
+                return (yield from future)
+            except futures.CancelledError:
+                sock.close()
+                raise
+
+        future = self._delayed(source, sock_connection_received, sock)
+        return self.create_task(accept_coro(future, sock))
+
+    def sock_recv(self, sock, nbytes, flags=0):
+        channel = self._channel_from_socket(sock)
+        source = GLib.io_create_watch(channel, GLib.IO_IN | GLib.IO_HUP)
+        def sock_data_received(sock, nbytes, flags):
+            return (True, sock.recv(nbytes, flags))
+        return self._delayed(source, sock_data_received, sock, nbytes, flags)
+
+    def sock_sendall(self, sock, buf, flags=0):
+        buflen = len(buf)
+        
+        # Fast-path: If there is enough room in the OS buffer all data can be written synchronously
+        try:
+            nbytes = sock.send(buf, flags)
+        except BlockingIOError:
+            nbytes = 0
+        else:
+            if nbytes >= len(buf):
+                # All data was written synchronously in one go
+                result = self.create_future()
+                result.set_result(nbytes)
+                return result
+        
+        # Chop off the initially transmitted data and store result
+        # as a bytearray for easier future modification
+        buf = bytearray(buf[nbytes:])
+        
+        # Send the remaining data asynchronously as the socket becomes writable
+        channel = self._channel_from_socket(sock)
+        source = GLib.io_create_watch(channel, GLib.IO_OUT)
+        def sock_writable(buflen, sock, buf, flags):
+            nbytes = sock.send(buf, flags)
+            if nbytes >= len(buf):
+                return (True, buflen)
+            else:
+                del buf[0:nbytes]
+                return (False, buflen)
+        return self._delayed(source, sock_writable, buflen, sock, buf, flags)
+
+
+
+class GLibEventLoop(GLibBaseEventLoop):
+    def __init__(self, *, context=None, application=None):
+        self._application = application
+        self._running = False
+
+        super().__init__(context)
+        if application is None:
+            self._mainloop = GLib.MainLoop(self._context)
+
+    def is_running(self):
+        return self._running
 
     def run(self):
         recursive = self.is_running()
@@ -227,132 +500,6 @@ class GLibEventLoop(BaseGLibEventLoop):
     def time(self):
         return GLib.get_monotonic_time() / 1000000
 
-    # FIXME: these functions are not available on windows
-    def _add_reader(self, fd, callback, *args):
-        if not isinstance(fd, int):
-            fd = fd.fileno()
-
-        self._remove_reader(fd)
-
-        s = GLib.unix_fd_source_new(fd, GLib.IO_IN)
-
-        assert fd not in self._readers
-        self._readers[fd] = GLibHandle(
-            loop=self,
-            source=s,
-            repeat=True,
-            callback=callback,
-            args=args)
-
-    def _remove_reader(self, fd):
-        if not isinstance(fd, int):
-            fd = fd.fileno()
-
-        try:
-            self._readers.pop(fd).cancel()
-            return True
-
-        except KeyError:
-            return False
-
-    def _add_writer(self, fd, callback, *args):
-        if not isinstance(fd, int):
-            fd = fd.fileno()
-
-        self._remove_writer(fd)
-
-        s = GLib.unix_fd_source_new(fd, GLib.IO_OUT)
-
-        assert fd not in self._writers
-
-        self._writers[fd] = GLibHandle(
-            loop=self,
-            source=s,
-            repeat=True,
-            callback=callback,
-            args=args)
-
-    def _remove_writer(self, fd):
-        if not isinstance(fd, int):
-            fd = fd.fileno()
-
-        try:
-            self._writers.pop(fd).cancel()
-            return True
-
-        except KeyError:
-            return False
-
-    # Disgusting backwards compatibility hack to ensure gbulb keeps working
-    # with Python versions that don't have http://bugs.python.org/issue28369
-    if not hasattr(unix_events.SelectorEventLoop, '_add_reader'):
-        add_reader = _add_reader
-        add_writer = _add_writer
-        remove_writer = _remove_writer
-        remove_reader = _remove_reader
-
-    # Signal handling.
-
-    def add_signal_handler(self, sig, callback, *args):
-        self._check_signal(sig)
-        self.remove_signal_handler(sig)
-
-        s = GLib.unix_signal_source_new(sig)
-        if s is None:
-            if sig == signal.SIGKILL:
-                raise RuntimeError("cannot catch SIGKILL")
-            else:
-                raise ValueError("signal not supported")
-
-        assert sig not in self._sighandlers
-
-        self._sighandlers[sig] = GLibHandle(
-            loop=self,
-            source=s,
-            repeat=True,
-            callback=callback,
-            args=args)
-
-    def remove_signal_handler(self, sig):
-        self._check_signal(sig)
-        try:
-            self._sighandlers.pop(sig).cancel()
-            return True
-
-        except KeyError:
-            return False
-
-
-class GLibEventLoop(BaseGLibEventLoop):
-    def __init__(self, *, context=None, application=None):
-        self._context = context or GLib.MainContext()
-        self._application = application
-        self._running = False
-
-        if application is None:
-            self._mainloop = GLib.MainLoop(self._context)
-        super().__init__()
-
-    def run(self):
-        recursive = self.is_running()
-        if not recursive and events._get_running_loop():
-            raise RuntimeError(
-                'Cannot run the event loop while another loop is running')
-
-        if not recursive:
-            self._running = True
-            events._set_running_loop(self)
-
-        try:
-            if self._application is not None:
-                self._application.run(None)
-            else:
-                self._mainloop.run()
-        finally:
-            if not recursive:
-                self._running = False
-                events._set_running_loop(None)
-
     def stop(self):
         """Stop the inner-most invocation of the event loop.
 
@@ -377,6 +524,7 @@ class GLibEventLoop(BaseGLibEventLoop):
         self._application = application
         self._policy._application = application
         del self._mainloop
+
 
 
 class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
@@ -425,7 +573,8 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         if not self._default_loop and isinstance(threading.current_thread(), threading._MainThread):
             l = self.get_default_loop()
         else:
-            l = GLibEventLoop()
+            #l = GLibEventLoop()
+            l = GLibBaseEventLoop()
         l._policy = self
 
         return l
@@ -437,7 +586,8 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         return self._default_loop
 
     def _new_default_loop(self):
-        l = GLibEventLoop(
-            context=GLib.main_context_default(), application=self._application)
+        #l = GLibEventLoop(
+        #    context=GLib.main_context_default(), application=self._application)
+        l = GLibBaseEventLoop(context=GLib.main_context_default())
         l._policy = self
         return l
