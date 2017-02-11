@@ -119,6 +119,7 @@ class GLibBaseEventLoop(base_events.BaseEventLoop):
         self._accept_futures = {}
         self._context = context or GLib.MainContext()
         self._selector = self
+        self._sighandlers = {}
         
         super().__init__()
     
@@ -130,6 +131,9 @@ class GLibBaseEventLoop(base_events.BaseEventLoop):
         for s in list(self._handlers):
             s.cancel()
         self._handlers.clear()
+        
+        for sig in list(self._sighandlers):
+            self.remove_signal_handler(sig)
         
         super().close()
 
@@ -383,6 +387,37 @@ class GLibBaseEventLoop(base_events.BaseEventLoop):
                 del buf[0:nbytes]
                 return (False, buflen)
         return self._delayed(source, sock_writable, buflen, sock, buf, flags)
+    
+    
+    if sys.platform != "win32":
+        def add_signal_handler(self, sig, callback, *args):
+            self.remove_signal_handler(sig)
+            
+            s = GLib.unix_signal_source_new(sig)
+            if s is None:
+                # Show custom error messages for signal that are uncatchable
+                if sig == signal.SIGKILL:
+                    raise RuntimeError("cannot catch SIGKILL")
+                elif sig == signal.SIGSTOP:
+                    raise RuntimeError("cannot catch SIGSTOP")
+                else:
+                    raise ValueError("signal not supported")
+            
+            assert sig not in self._sighandlers
+            
+            self._sighandlers[sig] = GLibHandle(
+                loop=self,
+                source=s,
+                repeat=True,
+                callback=callback,
+                args=args)
+        
+        def remove_signal_handler(self, sig):
+            try:
+                self._sighandlers.pop(sig).cancel()
+                return True
+            except KeyError:
+                return False
 
 
 
