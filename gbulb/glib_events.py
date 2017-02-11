@@ -259,7 +259,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
     def _make_datagram_transport(self, sock, protocol,
                                  address=None, waiter=None, extra=None):
         """Create datagram transport."""
-        raise NotImplementedError
+        return transports.DatagramTransport(self, sock, protocol, address, waiter, extra)
 
     def _make_read_pipe_transport(self, pipe, protocol, waiter=None,
                                   extra=None):
@@ -472,9 +472,19 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         read_func = lambda channel, nbytes: sock.recv(nbytes, flags)
         return self._channel_read(channel, nbytes, read_func)
 
+    def sock_recvfrom(self, sock, nbytes, flags=0):
+        channel = self._channel_from_socket(sock)
+        read_func = lambda channel, nbytes: sock.recvfrom(nbytes, flags)
+        return self._channel_read(channel, nbytes, read_func)
+
     def sock_sendall(self, sock, buf, flags=0):
         channel = self._channel_from_socket(sock)
         write_func = lambda channel, buf: sock.send(buf, flags)
+        return self._channel_write(channel, buf, write_func)
+
+    def sock_sendallto(self, sock, buf, addr, flags=0):
+        channel = self._channel_from_socket(sock)
+        write_func = lambda channel, buf: sock.sendto(buf, flags, addr)
         return self._channel_write(channel, buf, write_func)
     
     

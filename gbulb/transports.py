@@ -1,3 +1,4 @@
+import collections
 import socket
 from asyncio import futures, transports
 
@@ -120,6 +121,14 @@ class ReadTransport(BaseTransport, transports.ReadTransport):
     def _create_read_future(self, size):
         return self._loop.sock_recv(self._sock, size)
     
+    def _submit_read_data(self, data):
+        if data:
+            self._protocol.data_received(data)
+        else:
+            keep_open = self._protocol.eof_received()
+            if not keep_open:
+                self.close()
+    
     def _loop_reading(self, fut=None):
         if self._paused:
             return
@@ -161,20 +170,18 @@ class ReadTransport(BaseTransport, transports.ReadTransport):
         else:
             self._read_fut.add_done_callback(self._loop_reading)
         finally:
-            if data:
-                self._protocol.data_received(data)
-            elif data is not None:
-                keep_open = self._protocol.eof_received()
-                if not keep_open:
-                    self.close()
+            if data is not None:
+                self._submit_read_data(data)
 
 
 class WriteTransport(BaseTransport, transports._FlowControlMixin):
+    _buffer_factory = bytearray
+    
     def __init__(self, loop, *args, **kwargs):
         transports._FlowControlMixin.__init__(self, None, loop)
         BaseTransport.__init__(self, loop, *args, **kwargs)
         
-        self._buffer = bytearray()
+        self._buffer = self._buffer_factory()
         self._buffer_empty_callbacks = set()
         self._write_fut = None
         self._eof_written = False
@@ -203,8 +210,6 @@ class WriteTransport(BaseTransport, transports._FlowControlMixin):
         super().close()
     
     def write(self, data):
-        if not isinstance(data, (bytes, bytearray, memoryview)):
-            raise TypeError('data argument must be byte-ish (%r)', type(data))
         if self._eof_written:
             raise RuntimeError('write_eof() already called')
         
@@ -215,11 +220,22 @@ class WriteTransport(BaseTransport, transports._FlowControlMixin):
         if self._write_fut is None:  # No data is currently buffered or being sent
             self._loop_writing(data=data)
         else:
-            self._buffer.extend(data)
+            self._buffer_add_data(data)
             self._maybe_pause_protocol()  # From _FlowControlMixin
     
     def _create_write_future(self, data):
         return self._loop.sock_sendall(self._sock, data)
+    
+    def _buffer_add_data(self, data):
+        self._buffer.extend(data)
+    
+    def _buffer_pop_data(self):
+        if len(self._buffer) > 0:
+            data = self._buffer
+            self._buffer = bytearray()
+            return data
+        else:
+            return None
     
     def _loop_writing(self, fut=None, data=None):
         try:
@@ -234,8 +250,7 @@ class WriteTransport(BaseTransport, transports._FlowControlMixin):
             
             # Use buffer as next data object if invoked from done callback
             if data is None:
-                data = self._buffer
-                self._buffer = bytearray()
+                data = self._buffer_pop_data()
             
             if not data:
                 if len(self._buffer_empty_callbacks) > 0:
@@ -265,21 +280,6 @@ class Transport(ReadTransport, WriteTransport):
     def __init__(self, *args, **kwargs):
         ReadTransport.__init__(self, *args, **kwargs)
         WriteTransport.__init__(self, *args, **kwargs)
-    
-    
-    def close(self):
-        # Need to invoke both the read's and the write's part of the transport `close` function
-        self._close_read()
-        self._close_write()
-        
-        BaseTransport.close(self)
-
-
-class SocketTransport(Transport):
-    def __init__(self, *args, **kwargs):
-        self._eof_written = False
-        
-        super().__init__(*args, **kwargs)
         
         # Set expected extra attributes (available through `.get_extra_info()`)
         self._extra['socket'] = self._sock
@@ -292,6 +292,19 @@ class SocketTransport(Transport):
                 self._extra['peername'] = self._sock.getpeername()
             except (OSError, AttributeError) as error:
                 pass
+    
+    
+    def close(self):
+        # Need to invoke both the read's and the write's part of the transport `close` function
+        self._close_read()
+        self._close_write()
+        
+        BaseTransport.close(self)
+
+
+class SocketTransport(Transport):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
     
     
     def write_eof(self):
@@ -307,6 +320,58 @@ class SocketTransport(Transport):
                     self._sock.shutdown(socket.SHUT_WR)
             self._buffer_empty_callbacks.add(transport_write_eof_callback)
 
+
+
+class DatagramTransport(Transport, transports.DatagramTransport):
+    _buffer_factory = collections.deque
+    
+    def __init__(self, loop, sock, protocol, address=None, *args, **kwargs):
+        self._address = address
+        super().__init__(loop, sock, protocol, *args, **kwargs)
+    
+    
+    def _create_read_future(self, size):
+        return self._loop.sock_recvfrom(self._sock, size)
+    
+    def _submit_read_data(self, args):
+        (data, addr) = args
+        
+        self._protocol.datagram_received(data, addr)
+    
+    
+    def _create_write_future(self, args):
+        (data, addr) = args
+        
+        if self._address:
+            return self._loop.sock_sendall(self._sock, data)
+        else:
+            return self._loop.sock_sendallto(self._sock, data, addr)
+    
+    def _buffer_add_data(self, args):
+        (data, addr) = args
+        
+        self._buffer.append((bytes(data), addr))
+    
+    def _buffer_pop_data(self):
+        if len(self._buffer) > 0:
+            return self._buffer.popleft()
+        else:
+            return None
+    
+    def write(self, data, addr=None):
+        if not isinstance(data, (bytes, bytearray, memoryview)):
+            raise TypeError("data argument must be a bytes-like object, "
+                            "not {!r}".format(type(data).__name__))
+        
+        if not data or self.is_closing():
+            return
+        
+        if self._address and addr not in (None, self._address):
+            raise ValueError("Invalid address: must be None or {0}".format(self._address))
+        
+        # Do not copy the data yet, as we might be able to send it synchronously
+        super().write((data, addr))
+    sendto = write
 
 
 class PipeReadTransport(ReadTransport):
