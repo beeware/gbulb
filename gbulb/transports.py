@@ -64,16 +64,18 @@ class BaseTransport(transports.BaseTransport):
             cancelable.cancel()
         self._cancelable.clear()
         
-        def transport_async_close(exc):
-            try:
-                self._protocol.connection_lost(exc)
-            finally:
+        self._loop.call_soon(self._force_close_async, exc)
+    
+    def _force_close_async(self, exc):
+        try:
+            self._protocol.connection_lost(exc)
+        finally:
+            if self._sock is not None:
                 self._sock.close()
                 self._sock = None
-                if self._server is not None:
-                    self._server._detach()
-                    self._server = None
-        self._loop.call_soon(transport_async_close, exc)
+            if self._server is not None:
+                self._server._detach()
+                self._server = None
         
 
 
@@ -115,6 +117,9 @@ class ReadTransport(BaseTransport, transports.ReadTransport):
         
         super().close()
     
+    def _create_read_future(self, size):
+        return self._loop.sock_recv(self._sock, size)
+    
     def _loop_reading(self, fut=None):
         if self._paused:
             return
@@ -138,7 +143,7 @@ class ReadTransport(BaseTransport, transports.ReadTransport):
                 return
             
             # Reschedule a new read
-            self._read_fut = self._loop.sock_recv(self._sock, self.max_size)
+            self._read_fut = self._create_read_future(self.max_size)
             self._cancelable.add(self._read_fut)
         except ConnectionAbortedError as exc:
             if not self._closing:
@@ -172,6 +177,7 @@ class WriteTransport(BaseTransport, transports._FlowControlMixin):
         self._buffer = bytearray()
         self._buffer_empty_callbacks = set()
         self._write_fut = None
+        self._eof_written = False
     
     def abort(self):
         self._force_close(None)
@@ -212,6 +218,9 @@ class WriteTransport(BaseTransport, transports._FlowControlMixin):
             self._buffer.extend(data)
             self._maybe_pause_protocol()  # From _FlowControlMixin
     
+    def _create_write_future(self, data):
+        return self._loop.sock_sendall(self._sock, data)
+    
     def _loop_writing(self, fut=None, data=None):
         try:
             assert fut is self._write_fut
@@ -236,7 +245,7 @@ class WriteTransport(BaseTransport, transports._FlowControlMixin):
                 
                 self._maybe_resume_protocol()
             else:
-                self._write_fut = self._loop.sock_sendall(self._sock, data)
+                self._write_fut = self._create_write_future(data)
                 self._cancelable.add(self._write_fut)
                 if not self._write_fut.done():
                     self._write_fut.add_done_callback(self._loop_writing)
@@ -299,3 +308,34 @@ class SocketTransport(Transport):
             self._buffer_empty_callbacks.add(transport_write_eof_callback)
 
 
+
+class PipeReadTransport(ReadTransport):
+    def __init__(self, loop, channel, protocol, waiter, extra):
+        self._channel = channel
+        self._channel.set_close_on_unref(True)
+        super().__init__(loop, None, protocol, waiter, extra)
+    
+    def _create_read_future(self, size):
+        return self._loop._channel_read(self._channel, size)
+    
+    def _force_close_async(self, exc):
+        try:
+            super()._force_close_async(exc)
+        finally:
+            self._channel.shutdown(True)
+
+
+class PipeWriteTransport(WriteTransport):
+    def __init__(self, loop, channel, protocol, waiter, extra):
+        self._channel = channel
+        self._channel.set_close_on_unref(True)
+        super().__init__(loop, None, protocol, waiter, extra)
+    
+    def _create_write_future(self, data):
+        return self._loop._channel_write(self._channel, data)
+    
+    def _force_close_async(self, exc):
+        try:
+            super()._force_close_async(exc)
+        finally:
+            self._channel.shutdown(True)

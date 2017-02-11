@@ -194,12 +194,14 @@ class GLibBaseEventLoop(base_events.BaseEventLoop):
     def _make_read_pipe_transport(self, pipe, protocol, waiter=None,
                                   extra=None):
         """Create read pipe transport."""
-        raise NotImplementedError
+        channel = self._channel_from_fileobj(pipe)
+        return transports.PipeReadTransport(self, channel, protocol, waiter, extra)
 
     def _make_write_pipe_transport(self, pipe, protocol, waiter=None,
                                    extra=None):
         """Create write pipe transport."""
-        raise NotImplementedError
+        channel = self._channel_from_fileobj(pipe)
+        return transports.PipeWriteTransport(self, channel, protocol, waiter, extra)
 
     @asyncio.coroutine
     def _make_subprocess_transport(self, protocol, args, shell,
@@ -291,6 +293,18 @@ class GLibBaseEventLoop(base_events.BaseEventLoop):
         else:
             return GLib.IOChannel.unix_new(fd)
     
+    def _channel_from_fileobj(self, fileobj):
+        """Create GLib IOChannel for the given file object.
+        
+        On windows this will only work for files and pipes returned GLib's C library.
+        """
+        fd = self._fileobj_to_fd(fileobj)
+        
+        if sys.platform == "win32":
+            return GLib.IOChannel.win32_new_fd(fd)
+        else:
+            return GLib.IOChannel.unix_new(fd)
+    
     def _fileobj_to_fd(self, fileobj):
         """Obtain the raw file descriptor number for the given file object."""
         if isinstance(fileobj, int):
@@ -344,10 +358,12 @@ class GLibBaseEventLoop(base_events.BaseEventLoop):
                 raise OSError(errno, "[WinError {0}] {1}".format(errno, msg), None, errno)
             else:
                 raise OSError(errno, os.strerror(errno))
-
-
-
-
+    
+    
+    
+    ###############################
+    # Low-level socket operations #
+    ###############################
     def sock_connect(self, sock, address):
         # Request connection on socket (it is expected that `sock` is already non-blocking)
         try:
@@ -383,17 +399,37 @@ class GLibBaseEventLoop(base_events.BaseEventLoop):
 
     def sock_recv(self, sock, nbytes, flags=0):
         channel = self._channel_from_socket(sock)
-        source = GLib.io_create_watch(channel, GLib.IO_IN | GLib.IO_HUP)
-        def sock_data_received(sock, nbytes, flags):
-            return (True, sock.recv(nbytes, flags))
-        return self._delayed(source, sock_data_received, sock, nbytes, flags)
+        read_func = lambda channel, nbytes: sock.recv(nbytes, flags)
+        return self._channel_read(channel, nbytes, read_func)
 
     def sock_sendall(self, sock, buf, flags=0):
+        channel = self._channel_from_socket(sock)
+        write_func = lambda channel, buf: sock.send(buf, flags)
+        return self._channel_write(channel, buf, write_func)
+    
+    
+    
+    #####################################
+    # Low-level GLib.Channel operations #
+    #####################################
+    def _channel_read(self, channel, nbytes, read_func=None):
+        if read_func is None:
+            read_func = lambda channel, nbytes: channel.read(nbytes)
+        
+        source = GLib.io_create_watch(channel, GLib.IO_IN | GLib.IO_HUP)
+        def channel_readable(read_func, channel, nbytes):
+            return (True, read_func(channel, nbytes))
+        return self._delayed(source, channel_readable, read_func, channel, nbytes)
+    
+    def _channel_write(self, channel, buf, write_func=None):
+        if write_func is None:
+            write_func = lambda channel, buf: channel.write(buf)
+        
         buflen = len(buf)
         
         # Fast-path: If there is enough room in the OS buffer all data can be written synchronously
         try:
-            nbytes = sock.send(buf, flags)
+            nbytes = write_func(channel, buf)
         except BlockingIOError:
             nbytes = 0
         else:
@@ -408,16 +444,15 @@ class GLibBaseEventLoop(base_events.BaseEventLoop):
         buf = bytearray(buf[nbytes:])
         
         # Send the remaining data asynchronously as the socket becomes writable
-        channel = self._channel_from_socket(sock)
         source = GLib.io_create_watch(channel, GLib.IO_OUT)
-        def sock_writable(buflen, sock, buf, flags):
-            nbytes = sock.send(buf, flags)
+        def channel_writable(buflen, write_func, channel, buf):
+            nbytes = write_func(channel, buf)
             if nbytes >= len(buf):
                 return (True, buflen)
             else:
                 del buf[0:nbytes]
                 return (False, buflen)
-        return self._delayed(source, sock_writable, buflen, sock, buf, flags)
+        return self._delayed(source, channel_writable, buflen, write_func, channel, buf)
     
     
     
