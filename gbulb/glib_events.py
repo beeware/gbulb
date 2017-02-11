@@ -7,7 +7,7 @@ import socket
 import sys
 import threading
 import weakref
-from asyncio import base_events, events, futures, sslproto, tasks
+from asyncio import events, futures, sslproto, tasks
 
 
 from gi.repository import GLib, Gio
@@ -113,19 +113,91 @@ class GLibHandle(events.Handle):
         return self._repeat
 
 
-class GLibBaseEventLoop(base_events.BaseEventLoop):
+
+if sys.platform == "win32":
+    class GLibBaseEventLoopPlatformExt:
+        def __init__(self):
+            pass
+        
+        def close(self):
+            pass
+else:
+    from asyncio import unix_events
+    class GLibBaseEventLoopPlatformExt(unix_events.SelectorEventLoop):
+        """
+        Semi-hack that allows us to leverage the existing implementation of Unix domain sockets
+        without having to actually implement a selector based event loop.
+        
+        Note that both `__init__` and `close` DO NOT and SHOULD NOT ever call their parent
+        implementation!
+        """
+        def __init__(self):
+            self._sighandlers = {}
+        
+        def close(self):
+            for sig in list(self._sighandlers):
+                self.remove_signal_handler(sig)
+        
+        
+        def add_signal_handler(self, sig, callback, *args):
+            self.remove_signal_handler(sig)
+            
+            s = GLib.unix_signal_source_new(sig)
+            if s is None:
+                # Show custom error messages for signal that are uncatchable
+                if sig == signal.SIGKILL:
+                    raise RuntimeError("cannot catch SIGKILL")
+                elif sig == signal.SIGSTOP:
+                    raise RuntimeError("cannot catch SIGSTOP")
+                else:
+                    raise ValueError("signal not supported")
+            
+            assert sig not in self._sighandlers
+            
+            self._sighandlers[sig] = GLibHandle(
+                loop=self,
+                source=s,
+                repeat=True,
+                callback=callback,
+                args=args)
+        
+        def remove_signal_handler(self, sig):
+            try:
+                self._sighandlers.pop(sig).cancel()
+                return True
+            except KeyError:
+                return False
+
+
+
+class _BaseEventLoop(asyncio.BaseEventLoop):
+    """
+    Extra inheritance step that needs to be inserted so that we only ever indirectly inherit from
+    `asyncio.BaseEventLoop`. This is necessary as the Unix implementation will also indirectly
+    inherit from that class (thereby creating diamond inheritance).
+    Python permits and fully supports diamond inheritance so this is not a problem. However it
+    is, on the other hand, not permitted to inherit from a class both directly *and* indirectly –
+    hence we add this intermediate class to make sure that can never happen (see 
+    https://stackoverflow.com/q/29214888 for a minimal example a forbidden inheritance tree) and
+    https://www.python.org/download/releases/2.3/mro/ for some extensive documentation of the
+    allowed inheritance structures in python.
+    """
+
+
+
+class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
     def __init__(self, context=None):
         self._handlers = set()
         
         self._accept_futures = {}
         self._context = context or GLib.MainContext()
         self._selector = self
-        self._sighandlers = {}
         self._transports = weakref.WeakValueDictionary()
         self._readers = {}
         self._writers = {}
         
-        super().__init__()
+        _BaseEventLoop.__init__(self)
+        GLibBaseEventLoopPlatformExt.__init__(self)
     
     def close(self):
         for future in self._accept_futures.values():
@@ -136,10 +208,8 @@ class GLibBaseEventLoop(base_events.BaseEventLoop):
             s.cancel()
         self._handlers.clear()
         
-        for sig in list(self._sighandlers):
-            self.remove_signal_handler(sig)
-        
-        super().close()
+        GLibBaseEventLoopPlatformExt.close(self)
+        _BaseEventLoop.close(self)
 
     def select(self, timeout=None):
         self._context.acquire()
@@ -507,38 +577,6 @@ class GLibBaseEventLoop(base_events.BaseEventLoop):
             return True
         except KeyError:
             return False
-    
-    
-    
-    if sys.platform != "win32":
-        def add_signal_handler(self, sig, callback, *args):
-            self.remove_signal_handler(sig)
-            
-            s = GLib.unix_signal_source_new(sig)
-            if s is None:
-                # Show custom error messages for signal that are uncatchable
-                if sig == signal.SIGKILL:
-                    raise RuntimeError("cannot catch SIGKILL")
-                elif sig == signal.SIGSTOP:
-                    raise RuntimeError("cannot catch SIGSTOP")
-                else:
-                    raise ValueError("signal not supported")
-            
-            assert sig not in self._sighandlers
-            
-            self._sighandlers[sig] = GLibHandle(
-                loop=self,
-                source=s,
-                repeat=True,
-                callback=callback,
-                args=args)
-        
-        def remove_signal_handler(self, sig):
-            try:
-                self._sighandlers.pop(sig).cancel()
-                return True
-            except KeyError:
-                return False
 
 
 
