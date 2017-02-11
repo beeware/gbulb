@@ -19,6 +19,9 @@ class BaseTransport(transports.BaseTransport):
         self._closed = False
         self._cancelable = set()
         
+        if sock is not None:
+            self._loop._transports[sock.fileno()] = self
+        
         if self._server is not None:
             self._server._attach()
         

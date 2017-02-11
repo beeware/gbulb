@@ -6,6 +6,7 @@ import signal
 import socket
 import sys
 import threading
+import weakref
 from asyncio import base_events, events, futures, sslproto, tasks
 
 
@@ -120,6 +121,9 @@ class GLibBaseEventLoop(base_events.BaseEventLoop):
         self._context = context or GLib.MainContext()
         self._selector = self
         self._sighandlers = {}
+        self._transports = weakref.WeakValueDictionary()
+        self._readers = {}
+        self._writers = {}
         
         super().__init__()
     
@@ -213,6 +217,7 @@ class GLibBaseEventLoop(base_events.BaseEventLoop):
 
     def _start_serving(self, protocol_factory, sock,
                        sslcontext=None, server=None, backlog=100):
+        self._transports[sock.fileno()] = server
 
         def server_loop(f=None):
             try:
@@ -260,18 +265,44 @@ class GLibBaseEventLoop(base_events.BaseEventLoop):
         if (coroutines.iscoroutine(callback) or
                 coroutines.iscoroutinefunction(callback)):
             raise TypeError("coroutines cannot be used with {}()".format(name))
+    
+    def _ensure_fd_no_transport(self, fd):
+        """Ensure that the given file descriptor is NOT used by any transport.
+        
+        Adding another reader to a fd that is already being waited for causes a hang on Windows."""
+        try:
+            transport = self._transports[fd]
+        except KeyError:
+            pass
+        else:
+            if not hasattr(transport, "is_closing") or not transport.is_closing():
+                raise RuntimeError('File descriptor {!r} is used by transport {!r}'
+                                   .format(fd, transport))
 
     def _channel_from_socket(self, sock):
-        """Create GLib IOChannel for the given socket object."""
-        if not isinstance(sock, int):
-            fd = sock.fileno()
-        else:
-            fd = sock
+        """Create GLib IOChannel for the given file object.
+        
+        On windows this will only work for network sockets.
+        """
+        fd = self._fileobj_to_fd(sock)
         
         if sys.platform == "win32":
             return GLib.IOChannel.win32_new_socket(fd)
         else:
             return GLib.IOChannel.unix_new(fd)
+    
+    def _fileobj_to_fd(self, fileobj):
+        """Obtain the raw file descriptor number for the given file object."""
+        if isinstance(fileobj, int):
+            fd = fileobj
+        else:
+            try:
+                fd = int(fileobj.fileno())
+            except (AttributeError, TypeError, ValueError):
+                raise ValueError("Invalid file object: {!r}".format(fileobj))
+        if fd < 0:
+            raise ValueError("Invalid file descriptor: {}".format(fd))
+        return fd
 
     def _delayed(self, source, callback=None, *args):
         """Create a future that will complete after the given GLib Source object has become ready
@@ -387,6 +418,61 @@ class GLibBaseEventLoop(base_events.BaseEventLoop):
                 del buf[0:nbytes]
                 return (False, buflen)
         return self._delayed(source, sock_writable, buflen, sock, buf, flags)
+    
+    
+    
+    def add_reader(self, fileobj, callback, *args):
+        fd = self._fileobj_to_fd(fileobj)
+        self._ensure_fd_no_transport(fd)
+        
+        self.remove_reader(fd)
+        channel = self._channel_from_socket(fd)
+        source = GLib.io_create_watch(channel, GLib.IO_IN | GLib.IO_HUP)
+        
+        assert fd not in self._readers
+        self._readers[fd] = GLibHandle(
+            loop=self,
+            source=source,
+            repeat=True,
+            callback=callback,
+            args=args)
+    
+    def remove_reader(self, fileobj):
+        fd = self._fileobj_to_fd(fileobj)
+        self._ensure_fd_no_transport(fd)
+        
+        try:
+            self._readers.pop(fd).cancel()
+            return True
+        except KeyError:
+            return False
+    
+    def add_writer(self, fileobj, callback, *args):
+        fd = self._fileobj_to_fd(fileobj)
+        self._ensure_fd_no_transport(fd)
+        
+        self.remove_writer(fd)
+        channel = self._channel_from_socket(fd)
+        source = GLib.io_create_watch(channel, GLib.IO_OUT)
+        
+        assert fd not in self._writers
+        self._writers[fd] = GLibHandle(
+            loop=self,
+            source=source,
+            repeat=True,
+            callback=callback,
+            args=args)
+    
+    def remove_writer(self, fileobj):
+        fd = self._fileobj_to_fd(fileobj)
+        self._ensure_fd_no_transport(fd)
+        
+        try:
+            self._writers.pop(fd).cancel()
+            return True
+        except KeyError:
+            return False
+    
     
     
     if sys.platform != "win32":
