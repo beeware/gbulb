@@ -28,6 +28,20 @@ else:
 class GLibChildWatcher(AbstractChildWatcher):
     def __init__(self):
         self._sources = {}
+        self._handles = {}
+
+    # On windows on has to open a process handle for the given PID number
+    # before it's possible to use GLib's `child_watch_add` on it
+    if sys.platform == "win32":
+        def _create_handle_for_pid(self, pid):
+            import _winapi
+            return _winapi.OpenProcess(0x00100400, 0, pid)
+        def _close_process_handle(self, handle):
+            import _winapi
+            _winapi.CloseHandle(handle)
+    else:
+        _create_handle_for_pid = lambda self, pid: pid
+        _close_process_handle  = lambda self, pid: None
 
     def attach_loop(self, loop):
         # just ignored
@@ -35,38 +49,46 @@ class GLibChildWatcher(AbstractChildWatcher):
 
     def add_child_handler(self, pid, callback, *args):
         self.remove_child_handler(pid)
-
-        source = GLib.child_watch_add(0, pid, self.__callback__)
-        self._sources[pid] = source, callback, args
+        
+        handle = self._create_handle_for_pid(pid)
+        source = GLib.child_watch_add(0, handle, self.__callback__)
+        self._sources[pid] = source, callback, args, handle
+        self._handles[handle] = pid
 
     def remove_child_handler(self, pid):
         try:
-            source = self._sources.pop(pid)[0]
+            source, callback, args, handle = self._sources.pop(pid)
+            assert self._handles.pop(handle) == pid
         except KeyError:
             return False
-
+        
+        self._close_process_handle(handle)
         GLib.source_remove(source)
         return True
 
     def close(self):
-        for source, callback, args in self._sources.values():
+        for source, callback, args, handle in self._sources.values():
+            self._close_process_handle(handle)
             GLib.source_remove(source)
-
+        self._sources = {}
+        self._handles = {}
+    
     def __enter__(self):
         return self
-
+    
     def __exit__(self, a, b, c):
         pass
-
-    def __callback__(self, pid, status):
-
+    
+    def __callback__(self, handle, status):
         try:
-            source, callback, args = self._sources.pop(pid)
+            pid = self._handles.pop(handle)
+            source, callback, args, handle = self._sources.pop(pid)
         except KeyError:
             return
-
+        
+        self._close_process_handle(handle)
         GLib.source_remove(source)
-
+        
         if hasattr(os, "WIFSIGNALED") and os.WIFSIGNALED(status):
             returncode = -os.WTERMSIG(status)
         elif hasattr(os, "WIFEXITED") and os.WIFEXITED(status):
@@ -278,7 +300,28 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
                                    stdin, stdout, stderr, bufsize,
                                    extra=None, **kwargs):
         """Create subprocess transport."""
-        raise NotImplementedError
+        with events.get_child_watcher() as watcher:
+            waiter = self.create_future()
+            transport = transports.SubprocessTransport(self, protocol, args, shell,
+                                                       stdin, stdout, stderr, bufsize,
+                                                       waiter=waiter, extra=extra, **kwargs)
+            
+            watcher.add_child_handler(transport.get_pid(), self._child_watcher_callback, transport)
+            try:
+                yield from waiter
+            except Exception as exc:
+                err = exc
+            else:
+                err = None
+            if err is not None:
+                transport.close()
+                yield from transport._wait()
+                raise err
+        
+        return transport
+    
+    def _child_watcher_callback(self, pid, returncode, transport):
+        self.call_soon_threadsafe(transport._process_exited, returncode)
 
     def _write_to_self(self):
         self._context.wakeup()

@@ -1,6 +1,7 @@
 import collections
 import socket
-from asyncio import futures, transports
+import subprocess
+from asyncio import base_subprocess, futures, transports
 
 
 
@@ -404,3 +405,10 @@ class PipeWriteTransport(WriteTransport):
             super()._force_close_async(exc)
         finally:
             self._channel.shutdown(True)
+
+
+class SubprocessTransport(base_subprocess.BaseSubprocessTransport):
+    def _start(self, args, shell, stdin, stdout, stderr, bufsize, **kwargs):
+        self._proc = subprocess.Popen(
+            args, shell=shell, stdin=stdin, stdout=stdout, stderr=stderr,
+            bufsize=bufsize, **kwargs)
