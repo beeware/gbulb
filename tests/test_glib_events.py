@@ -1,11 +1,14 @@
 import asyncio
+import sys
 
 import pytest
 
-from unittest import mock
+from unittest import mock, skipIf
 from gi.repository import Gio
 
 from utils import glib_loop, glib_policy
+
+is_windows = (sys.platform == "win32")
 
 
 class TestGLibEventLoopPolicy:
@@ -71,6 +74,7 @@ def no_op_coro():
 
 
 class TestBaseGLibEventLoop:
+    @skipIf(is_windows, "Unix signal handlers are not supported on Windows")
     def test_add_signal_handler(self, glib_loop):
         import os
         import signal
@@ -90,6 +94,7 @@ class TestBaseGLibEventLoop:
 
         assert called, 'signal handler didnt fire'
 
+    @skipIf(is_windows, "Unix signal handlers are not supported on Windows")
     def test_remove_signal_handler(self, glib_loop):
         import signal
 
@@ -101,15 +106,18 @@ class TestBaseGLibEventLoop:
 
         # FIXME: it'd be great if we could actually try signalling the process
 
+    @skipIf(is_windows, "Unix signal handlers are not supported on Windows")
     def test_remove_signal_handler_unhandled(self, glib_loop):
         import signal
         assert not glib_loop.remove_signal_handler(signal.SIGHUP)
 
+    @skipIf(is_windows, "Unix signal handlers are not supported on Windows")
     def test_remove_signal_handler_sigkill(self, glib_loop):
         import signal
         with pytest.raises(RuntimeError):
             glib_loop.add_signal_handler(signal.SIGKILL, None)
 
+    @skipIf(is_windows, "Unix signal handlers are not supported on Windows")
     def test_remove_signal_handler_sigill(self, glib_loop):
         import signal
         with pytest.raises(ValueError):
@@ -126,6 +134,7 @@ class TestBaseGLibEventLoop:
         with pytest.raises(RuntimeError):
             glib_loop.run_until_complete(coro())
 
+    @skipIf(is_windows, "Waiting on raw file descriptors only works for sockets on Windows")
     def test_add_writer(self, glib_loop):
         import os
         rfd, wfd = os.pipe()
@@ -145,6 +154,7 @@ class TestBaseGLibEventLoop:
 
         assert called, 'callback handler didnt fire'
 
+    @skipIf(is_windows, "Waiting on raw file descriptors only works for sockets on Windows")
     def test_add_reader(self, glib_loop):
         import os
         rfd, wfd = os.pipe()
@@ -164,6 +174,7 @@ class TestBaseGLibEventLoop:
 
         assert called, 'callback handler didnt fire'
 
+    @skipIf(is_windows, "Waiting on raw file descriptors only works for sockets on Windows")
     def test_add_reader_file(self, glib_loop):
         import os
         rfd, wfd = os.pipe()
@@ -175,6 +186,7 @@ class TestBaseGLibEventLoop:
 
         glib_loop.add_reader(f, None)
 
+    @skipIf(is_windows, "Waiting on raw file descriptors only works for sockets on Windows")
     def test_add_writer_file(self, glib_loop):
         import os
         rfd, wfd = os.pipe()
@@ -186,6 +198,7 @@ class TestBaseGLibEventLoop:
 
         glib_loop.add_writer(f, None)
 
+    @skipIf(is_windows, "Waiting on raw file descriptors only works for sockets on Windows")
     def test_remove_reader(self, glib_loop):
         import os
         rfd, wfd = os.pipe()
@@ -200,6 +213,7 @@ class TestBaseGLibEventLoop:
         assert glib_loop.remove_reader(f)
         assert not glib_loop.remove_reader(f.fileno())
 
+    @skipIf(is_windows, "Waiting on raw file descriptors only works for sockets on Windows")
     def test_remove_writer(self, glib_loop):
         import os
         rfd, wfd = os.pipe()
@@ -236,7 +250,7 @@ class TestBaseGLibEventLoop:
 
             print(now, s)
             import math
-            assert math.isclose(now, s, abs_tol=0.1)
+            assert math.isclose(now, s, abs_tol=0.2)
 
         s = glib_loop.time()
 
@@ -272,6 +286,7 @@ class TestBaseGLibEventLoop:
         assert items
         assert items == sorted(items)
 
+    @skipIf(is_windows, "Waiting on raw file descriptors only works for sockets on Windows")
     def test_call_soon_priority(self, glib_loop):
         def remover(fd):
             nonlocal removed
@@ -313,6 +328,7 @@ class TestBaseGLibEventLoop:
             os.close(rfd)
             os.close(wfd)
 
+    @skipIf(is_windows, "Waiting on raw file descriptors only works for sockets on Windows")
     def test_add_writer_multiple_calls(self, glib_loop):
         import os
         rfd, wfd = os.pipe()
@@ -448,6 +464,7 @@ class TestGLibEventLoop:
                 glib_loop.set_application(app)
 
 
+@skipIf(is_windows, "Unix signal handlers are not supported on Windows")
 def test_default_signal_handling(glib_loop):
     import os
     import signal
