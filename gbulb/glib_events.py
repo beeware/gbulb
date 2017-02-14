@@ -218,6 +218,8 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         self._readers = {}
         self._writers = {}
         
+        self._channels = weakref.WeakValueDictionary()
+        
         _BaseEventLoop.__init__(self)
         GLibBaseEventLoopPlatformExt.__init__(self)
     
@@ -409,14 +411,25 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
     def _channel_from_socket(self, sock):
         """Create GLib IOChannel for the given file object.
         
+        This function will cache weak references to `GLib.Channel` objects
+        it previously has created to prevent weird issues that can occur
+        when two GLib channels point to the same underlying socket resource.
+        
         On windows this will only work for network sockets.
         """
         fd = self._fileobj_to_fd(sock)
         
-        if sys.platform == "win32":
-            return GLib.IOChannel.win32_new_socket(fd)
-        else:
-            return GLib.IOChannel.unix_new(fd)
+        sock_id = id(sock)
+        try:
+            channel = self._channels[sock_id]
+        except KeyError:
+            if sys.platform == "win32":
+                channel = GLib.IOChannel.win32_new_socket(fd)
+            else:
+                channel = GLib.IOChannel.unix_new(fd)
+            
+            self._channels[sock_id] = channel
+        return channel
     
     def _channel_from_fileobj(self, fileobj):
         """Create GLib IOChannel for the given file object.
@@ -597,7 +610,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         
         self.remove_reader(fd)
         channel = self._channel_from_socket(fd)
-        source = GLib.io_create_watch(channel, GLib.IO_IN | GLib.IO_HUP)
+        source = GLib.io_create_watch(channel, GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR | GLib.IO_NVAL)
         
         assert fd not in self._readers
         self._readers[fd] = GLibHandle(
@@ -623,7 +636,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         
         self.remove_writer(fd)
         channel = self._channel_from_socket(fd)
-        source = GLib.io_create_watch(channel, GLib.IO_OUT)
+        source = GLib.io_create_watch(channel, GLib.IO_OUT | GLib.IO_ERR | GLib.IO_NVAL)
         
         assert fd not in self._writers
         self._writers[fd] = GLibHandle(
@@ -719,18 +732,8 @@ class GLibEventLoop(GLibBaseEventLoop):
     def call_soon(self, callback, *args):
         self._check_not_coroutine(callback, 'call_soon')
         source = GLib.Idle()
-
-        # XXX: we set the source's priority to high for the following scenario:
-        #
-        # - loop.sock_connect() begins asynchronous connection
-        # - this adds a write callback to detect when the connection has
-        #   completed
-        # - this write callback sets the result of a future
-        # - future.Future schedules callbacks with call_later.
-        # - the callback for this future removes the write callback
-        # - GLib.Idle() has a much lower priority than that of the GSource for
-        #   the writer, so it never gets scheduled.
-        source.set_priority(GLib.PRIORITY_HIGH)
+        
+        source.set_priority(GLib.PRIORITY_DEFAULT)
 
         return GLibHandle(
             loop=self,
@@ -832,8 +835,7 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         if not self._default_loop and isinstance(threading.current_thread(), threading._MainThread):
             l = self.get_default_loop()
         else:
-            #l = GLibEventLoop()
-            l = GLibBaseEventLoop()
+            l = GLibEventLoop()
         l._policy = self
 
         return l
@@ -845,8 +847,6 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         return self._default_loop
 
     def _new_default_loop(self):
-        #l = GLibEventLoop(
-        #    context=GLib.main_context_default(), application=self._application)
-        l = GLibBaseEventLoop(context=GLib.main_context_default())
+        l = GLibEventLoop(context=GLib.main_context_default(), application=self._application)
         l._policy = self
         return l
