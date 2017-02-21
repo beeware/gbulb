@@ -32,6 +32,9 @@ def install(gtk=False):
     asyncio.SafeChildWatcher = GLibChildWatcher
     asyncio.set_event_loop_policy(policy)
 
+    from .glib_events import GLibChildWatcher
+    asyncio.SafeChildWatcher = GLibChildWatcher
+
 
 def get_event_loop():
     """Alias to asyncio.get_event_loop()."""

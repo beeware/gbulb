@@ -7,7 +7,7 @@ from asyncio import events, tasks, unix_events
 
 from gi.repository import GLib, Gio
 
-__all__ = ['GLibEventLoop', 'GLibEventLoopPolicy']
+__all__ = ['GLibEventLoop', 'GLibEventLoopPolicy', 'GLibChildWatcher']
 
 
 class GLibChildWatcher(unix_events.AbstractChildWatcher):
@@ -441,3 +441,6 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
             context=GLib.main_context_default(), application=self._application)
         l._policy = self
         return l
+
+    def set_child_watcher(self, watcher):
+        pass
