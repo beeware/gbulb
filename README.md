@@ -1,5 +1,6 @@
 # gbulb - a PEP 3156 event loop based on GLib
 
+[![Build Status](http://drone.getoffmalawn.com/api/badges/nathan-hoad/gbulb/status.svg)](http://drone.getoffmalawn.com/nathan-hoad/gbulb)
 
 Gbulb is a Python library that implements a [PEP 3156][PEP3156] interface for
 the [GLib main event loop][glibloop] under UNIX-like systems.
