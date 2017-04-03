@@ -4,7 +4,7 @@ import sys
 import pytest
 
 from unittest import mock, skipIf
-from gi.repository import Gio
+from gi.repository import Gio, GLib
 
 from utils import glib_loop, glib_policy
 
@@ -286,47 +286,10 @@ class TestBaseGLibEventLoop:
         assert items
         assert items == sorted(items)
 
-    @skipIf(is_windows, "Waiting on raw file descriptors only works for sockets on Windows")
     def test_call_soon_priority(self, glib_loop):
-        def remover(fd):
-            nonlocal removed
-            assert glib_loop.remove_writer(fd)
-
-            removed = True
-            glib_loop.stop()
-
-        def callback(fut):
-            fut.set_result(None)
-
-        def timeout():
-            nonlocal timeout_occurred
-            timeout_occurred = True
-            glib_loop.stop()
-
-        def run_test(fd):
-            import asyncio
-            from gi.repository import GLib
-
-            fut = asyncio.Future(loop=glib_loop)
-            fut.add_done_callback(lambda r: remover(fd))
-            glib_loop.add_writer(fd, callback, fut)
-            glib_loop.call_later(0.1, timeout)
-            glib_loop.run_forever()
-
-            assert not timeout_occurred
-            assert removed
-
-        import os
-        rfd, wfd = os.pipe()
-
-        removed = False
-        timeout_occurred = False
-
-        try:
-            run_test(wfd)
-        finally:
-            os.close(rfd)
-            os.close(wfd)
+        h = glib_loop.call_soon(lambda: None)
+        assert h._source.get_priority() == GLib.PRIORITY_DEFAULT
+        h.cancel()
 
     @skipIf(is_windows, "Waiting on raw file descriptors only works for sockets on Windows")
     def test_add_writer_multiple_calls(self, glib_loop):
