@@ -9,7 +9,6 @@ import threading
 import weakref
 from asyncio import events, futures, sslproto, tasks
 
-
 from gi.repository import GLib, Gio
 
 from . import transports
@@ -25,6 +24,7 @@ if sys.platform == "win32":
 else:
     from asyncio.unix_events import AbstractChildWatcher
 
+
 class GLibChildWatcher(AbstractChildWatcher):
     def __init__(self):
         self._sources = {}
@@ -33,15 +33,17 @@ class GLibChildWatcher(AbstractChildWatcher):
     # On windows on has to open a process handle for the given PID number
     # before it's possible to use GLib's `child_watch_add` on it
     if sys.platform == "win32":
+
         def _create_handle_for_pid(self, pid):
             import _winapi
             return _winapi.OpenProcess(0x00100400, 0, pid)
+
         def _close_process_handle(self, handle):
             import _winapi
             _winapi.CloseHandle(handle)
     else:
         _create_handle_for_pid = lambda self, pid: pid
-        _close_process_handle  = lambda self, pid: None
+        _close_process_handle = lambda self, pid: None
 
     def attach_loop(self, loop):
         # just ignored
@@ -49,7 +51,7 @@ class GLibChildWatcher(AbstractChildWatcher):
 
     def add_child_handler(self, pid, callback, *args):
         self.remove_child_handler(pid)
-        
+
         handle = self._create_handle_for_pid(pid)
         source = GLib.child_watch_add(0, handle, self.__callback__)
         self._sources[pid] = source, callback, args, handle
@@ -61,7 +63,7 @@ class GLibChildWatcher(AbstractChildWatcher):
             assert self._handles.pop(handle) == pid
         except KeyError:
             return False
-        
+
         self._close_process_handle(handle)
         GLib.source_remove(source)
         return True
@@ -72,29 +74,29 @@ class GLibChildWatcher(AbstractChildWatcher):
             GLib.source_remove(source)
         self._sources = {}
         self._handles = {}
-    
+
     def __enter__(self):
         return self
-    
+
     def __exit__(self, a, b, c):
         pass
-    
+
     def __callback__(self, handle, status):
         try:
             pid = self._handles.pop(handle)
             source, callback, args, handle = self._sources.pop(pid)
         except KeyError:
             return
-        
+
         self._close_process_handle(handle)
         GLib.source_remove(source)
-        
+
         if hasattr(os, "WIFSIGNALED") and os.WIFSIGNALED(status):
             returncode = -os.WTERMSIG(status)
         elif hasattr(os, "WIFEXITED") and os.WIFEXITED(status):
             returncode = os.WEXITSTATUS(status)
 
-            #FIXME: Hack for adjusting invalid status returned by GLIB
+            # FIXME: Hack for adjusting invalid status returned by GLIB
             #    Looks like there is a bug in glib or in pygobject
             if returncode > 128:
                 returncode = 128 - returncode
@@ -102,7 +104,6 @@ class GLibChildWatcher(AbstractChildWatcher):
             returncode = status
 
         callback(pid, returncode, *args)
-
 
 
 class GLibHandle(events.Handle):
@@ -135,35 +136,34 @@ class GLibHandle(events.Handle):
         return self._repeat
 
 
-
 if sys.platform == "win32":
     class GLibBaseEventLoopPlatformExt:
         def __init__(self):
             pass
-        
+
         def close(self):
             pass
 else:
     from asyncio import unix_events
+
     class GLibBaseEventLoopPlatformExt(unix_events.SelectorEventLoop):
         """
         Semi-hack that allows us to leverage the existing implementation of Unix domain sockets
         without having to actually implement a selector based event loop.
-        
+
         Note that both `__init__` and `close` DO NOT and SHOULD NOT ever call their parent
         implementation!
         """
         def __init__(self):
             self._sighandlers = {}
-        
+
         def close(self):
             for sig in list(self._sighandlers):
                 self.remove_signal_handler(sig)
-        
-        
+
         def add_signal_handler(self, sig, callback, *args):
             self.remove_signal_handler(sig)
-            
+
             s = GLib.unix_signal_source_new(sig)
             if s is None:
                 # Show custom error messages for signal that are uncatchable
@@ -173,23 +173,22 @@ else:
                     raise RuntimeError("cannot catch SIGSTOP")
                 else:
                     raise ValueError("signal not supported")
-            
+
             assert sig not in self._sighandlers
-            
+
             self._sighandlers[sig] = GLibHandle(
                 loop=self,
                 source=s,
                 repeat=True,
                 callback=callback,
                 args=args)
-        
+
         def remove_signal_handler(self, sig):
             try:
                 self._sighandlers.pop(sig).cancel()
                 return True
             except KeyError:
                 return False
-
 
 
 class _BaseEventLoop(asyncio.BaseEventLoop):
@@ -199,39 +198,38 @@ class _BaseEventLoop(asyncio.BaseEventLoop):
     inherit from that class (thereby creating diamond inheritance).
     Python permits and fully supports diamond inheritance so this is not a problem. However it
     is, on the other hand, not permitted to inherit from a class both directly *and* indirectly –
-    hence we add this intermediate class to make sure that can never happen (see 
+    hence we add this intermediate class to make sure that can never happen (see
     https://stackoverflow.com/q/29214888 for a minimal example a forbidden inheritance tree) and
     https://www.python.org/download/releases/2.3/mro/ for some extensive documentation of the
     allowed inheritance structures in python.
     """
 
 
-
 class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
     def __init__(self, context=None):
         self._handlers = set()
-        
+
         self._accept_futures = {}
         self._context = context or GLib.MainContext()
         self._selector = self
         self._transports = weakref.WeakValueDictionary()
         self._readers = {}
         self._writers = {}
-        
+
         self._channels = weakref.WeakValueDictionary()
-        
+
         _BaseEventLoop.__init__(self)
         GLibBaseEventLoopPlatformExt.__init__(self)
-    
+
     def close(self):
         for future in self._accept_futures.values():
             future.cancel()
         self._accept_futures.clear()
-        
+
         for s in list(self._handlers):
             s.cancel()
         self._handlers.clear()
-        
+
         GLibBaseEventLoopPlatformExt.close(self)
         _BaseEventLoop.close(self)
 
@@ -259,8 +257,6 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         finally:
             self._context.release()
 
-
-
     def _make_socket_transport(self, sock, protocol, waiter=None, *,
                                extra=None, server=None):
         """Create socket transport."""
@@ -273,8 +269,9 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         if not sslproto._is_sslproto_available():
             # Python 3.4.3 and below
             if hasattr(self, "_make_legacy_ssl_transport"):
-                #HACK: Add compatibility aliases to make `_SelectorSslTransport` somehow work,
-                #      then reuse the SSL transport code from the official library
+                # HACK: Add compatibility aliases to make
+                #       `_SelectorSslTransport` somehow work, then reuse the
+                #       SSL transport code from the official library
                 self._add_reader = self.add_reader
                 self._remove_reader = self.remove_reader
                 self._add_writer = self.add_writer
@@ -319,7 +316,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
             transport = transports.SubprocessTransport(self, protocol, args, shell,
                                                        stdin, stdout, stderr, bufsize,
                                                        waiter=waiter, extra=extra, **kwargs)
-            
+
             watcher.add_child_handler(transport.get_pid(), self._child_watcher_callback, transport)
             try:
                 yield from waiter
@@ -331,9 +328,9 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
                 transport.close()
                 yield from transport._wait()
                 raise err
-        
+
         return transport
-    
+
     def _child_watcher_callback(self, pid, returncode, transport):
         self.call_soon_threadsafe(transport._process_exited, returncode)
 
@@ -385,19 +382,16 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
             self._accept_futures[sock.fileno()].cancel()
         sock.close()
 
-
-
-
     def _check_not_coroutine(self, callback, name):
         """Check whether the given callback is a coroutine or not."""
         from asyncio import coroutines
         if (coroutines.iscoroutine(callback) or
                 coroutines.iscoroutinefunction(callback)):
             raise TypeError("coroutines cannot be used with {}()".format(name))
-    
+
     def _ensure_fd_no_transport(self, fd):
         """Ensure that the given file descriptor is NOT used by any transport.
-        
+
         Adding another reader to a fd that is already being waited for causes a hang on Windows."""
         try:
             transport = self._transports[fd]
@@ -410,15 +404,15 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
 
     def _channel_from_socket(self, sock):
         """Create GLib IOChannel for the given file object.
-        
+
         This function will cache weak references to `GLib.Channel` objects
         it previously has created to prevent weird issues that can occur
         when two GLib channels point to the same underlying socket resource.
-        
+
         On windows this will only work for network sockets.
         """
         fd = self._fileobj_to_fd(sock)
-        
+
         sock_id = id(sock)
         try:
             channel = self._channels[sock_id]
@@ -427,22 +421,22 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
                 channel = GLib.IOChannel.win32_new_socket(fd)
             else:
                 channel = GLib.IOChannel.unix_new(fd)
-            
+
             self._channels[sock_id] = channel
         return channel
-    
+
     def _channel_from_fileobj(self, fileobj):
         """Create GLib IOChannel for the given file object.
-        
+
         On windows this will only work for files and pipes returned GLib's C library.
         """
         fd = self._fileobj_to_fd(fileobj)
-        
+
         if sys.platform == "win32":
             return GLib.IOChannel.win32_new_fd(fd)
         else:
             return GLib.IOChannel.unix_new(fd)
-    
+
     def _fileobj_to_fd(self, fileobj):
         """Obtain the raw file descriptor number for the given file object."""
         if isinstance(fileobj, int):
@@ -460,6 +454,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         """Create a future that will complete after the given GLib Source object has become ready
         and the data it tracks has been processed."""
         future = None
+
         def handle_ready(*args):
             try:
                 if callback:
@@ -496,9 +491,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
                 raise OSError(errno, "[WinError {0}] {1}".format(errno, msg), None, errno)
             else:
                 raise OSError(errno, os.strerror(errno))
-    
-    
-    
+
     ###############################
     # Low-level socket operations #
     ###############################
@@ -512,6 +505,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         # Create glib IOChannel for socket and wait for it to become writable
         channel = self._channel_from_socket(sock)
         source = GLib.io_create_watch(channel, GLib.IO_OUT)
+
         def sock_finish_connect(sock):
             self._socket_handle_errors(sock)
             return (True, sock)
@@ -520,6 +514,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
     def sock_accept(self, sock):
         channel = self._channel_from_socket(sock)
         source = GLib.io_create_watch(channel, GLib.IO_IN)
+
         def sock_connection_received(sock):
             return (True, sock.accept())
 
@@ -554,27 +549,26 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         channel = self._channel_from_socket(sock)
         write_func = lambda channel, buf: sock.sendto(buf, flags, addr)
         return self._channel_write(channel, buf, write_func)
-    
-    
-    
+
     #####################################
     # Low-level GLib.Channel operations #
     #####################################
     def _channel_read(self, channel, nbytes, read_func=None):
         if read_func is None:
             read_func = lambda channel, nbytes: channel.read(nbytes)
-        
+
         source = GLib.io_create_watch(channel, GLib.IO_IN | GLib.IO_HUP)
+
         def channel_readable(read_func, channel, nbytes):
             return (True, read_func(channel, nbytes))
         return self._delayed(source, channel_readable, read_func, channel, nbytes)
-    
+
     def _channel_write(self, channel, buf, write_func=None):
         if write_func is None:
             write_func = lambda channel, buf: channel.write(buf)
-        
+
         buflen = len(buf)
-        
+
         # Fast-path: If there is enough room in the OS buffer all data can be written synchronously
         try:
             nbytes = write_func(channel, buf)
@@ -586,13 +580,14 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
                 result = asyncio.Future(loop=self)
                 result.set_result(nbytes)
                 return result
-        
+
         # Chop off the initially transmitted data and store result
         # as a bytearray for easier future modification
         buf = bytearray(buf[nbytes:])
-        
+
         # Send the remaining data asynchronously as the socket becomes writable
         source = GLib.io_create_watch(channel, GLib.IO_OUT)
+
         def channel_writable(buflen, write_func, channel, buf):
             nbytes = write_func(channel, buf)
             if nbytes >= len(buf):
@@ -601,17 +596,15 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
                 del buf[0:nbytes]
                 return (False, buflen)
         return self._delayed(source, channel_writable, buflen, write_func, channel, buf)
-    
-    
-    
+
     def add_reader(self, fileobj, callback, *args):
         fd = self._fileobj_to_fd(fileobj)
         self._ensure_fd_no_transport(fd)
-        
+
         self.remove_reader(fd)
         channel = self._channel_from_socket(fd)
         source = GLib.io_create_watch(channel, GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR | GLib.IO_NVAL)
-        
+
         assert fd not in self._readers
         self._readers[fd] = GLibHandle(
             loop=self,
@@ -619,25 +612,25 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
             repeat=True,
             callback=callback,
             args=args)
-    
+
     def remove_reader(self, fileobj):
         fd = self._fileobj_to_fd(fileobj)
         self._ensure_fd_no_transport(fd)
-        
+
         try:
             self._readers.pop(fd).cancel()
             return True
         except KeyError:
             return False
-    
+
     def add_writer(self, fileobj, callback, *args):
         fd = self._fileobj_to_fd(fileobj)
         self._ensure_fd_no_transport(fd)
-        
+
         self.remove_writer(fd)
         channel = self._channel_from_socket(fd)
         source = GLib.io_create_watch(channel, GLib.IO_OUT | GLib.IO_ERR | GLib.IO_NVAL)
-        
+
         assert fd not in self._writers
         self._writers[fd] = GLibHandle(
             loop=self,
@@ -645,17 +638,16 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
             repeat=True,
             callback=callback,
             args=args)
-    
+
     def remove_writer(self, fileobj):
         fd = self._fileobj_to_fd(fileobj)
         self._ensure_fd_no_transport(fd)
-        
+
         try:
             self._writers.pop(fd).cancel()
             return True
         except KeyError:
             return False
-
 
 
 class GLibEventLoop(GLibBaseEventLoop):
@@ -717,7 +709,7 @@ class GLibEventLoop(GLibBaseEventLoop):
         """Run the event loop until stop() is called."""
         if application is not None:
             self.set_application(application)
-        
+
         if self.is_running():
             raise RuntimeError(
                 "Recursively calling run_forever is forbidden. "
@@ -732,7 +724,7 @@ class GLibEventLoop(GLibBaseEventLoop):
     def call_soon(self, callback, *args):
         self._check_not_coroutine(callback, 'call_soon')
         source = GLib.Idle()
-        
+
         source.set_priority(GLib.PRIORITY_DEFAULT)
 
         return GLibHandle(
@@ -788,7 +780,6 @@ class GLibEventLoop(GLibBaseEventLoop):
         del self._mainloop
 
 
-
 class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
     """Default GLib event loop policy
 
@@ -797,7 +788,7 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
     threads by default have no event loop.
     """
 
-    #TODO add a parameter to synchronise with GLib's thread default contexts
+    # TODO add a parameter to synchronise with GLib's thread default contexts
     #   (g_main_context_push_thread_default())
     def __init__(self, application=None):
         self._default_loop = None
