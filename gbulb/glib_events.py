@@ -13,6 +13,18 @@ from gi.repository import GLib, Gio
 
 from . import transports
 
+
+if hasattr(os, 'set_blocking'):
+    def _set_nonblocking(fd):
+        os.set_blocking(fd, False)
+else:
+    import fcntl
+
+    def _set_nonblocking(fd):
+        flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+        flags = flags | os.O_NONBLOCK
+        fcntl.fcntl(fd, fcntl.F_SETFL, flags)
+
 __all__ = ['GLibEventLoop', 'GLibEventLoopPolicy']
 
 
@@ -438,7 +450,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
 
         # pipes have been shown to be blocking here, so we'll do someone
         # else's job for them.
-        os.set_blocking(fd, False)
+        _set_nonblocking(fd)
 
         if sys.platform == "win32":
             channel = GLib.IOChannel.win32_new_fd(fd)
