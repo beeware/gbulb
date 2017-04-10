@@ -432,10 +432,19 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         """
         fd = self._fileobj_to_fd(fileobj)
 
+        # pipes have been shown to be blocking here, so we'll do someone
+        # else's job for them.
+        os.set_blocking(fd, False)
+
         if sys.platform == "win32":
-            return GLib.IOChannel.win32_new_fd(fd)
+            channel = GLib.IOChannel.win32_new_fd(fd)
         else:
-            return GLib.IOChannel.unix_new(fd)
+            channel = GLib.IOChannel.unix_new(fd)
+
+        # disabling buffering requires setting the encoding to None
+        channel.set_encoding(None)
+        channel.set_buffered(False)
+        return channel
 
     def _fileobj_to_fd(self, fileobj):
         """Obtain the raw file descriptor number for the given file object."""
@@ -565,8 +574,11 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
 
     def _channel_write(self, channel, buf, write_func=None):
         if write_func is None:
-            write_func = lambda channel, buf: channel.write(buf)
-
+            # note: channel.write doesn't raise BlockingIOError, instead it
+            # returns 0
+            # gi.overrides.GLib.write has an isinstance(buf, bytes) check, so
+            # we can't give it a bytearray or a memoryview.
+            write_func = lambda channel, buf: channel.write(bytes(buf))
         buflen = len(buf)
 
         # Fast-path: If there is enough room in the OS buffer all data can be written synchronously

@@ -438,7 +438,7 @@ def test_default_signal_handling(glib_loop):
         glib_loop.run_forever()
 
 
-def test_subprocesses(glib_loop):
+def test_subprocesses_read_after_closure(glib_loop):
     import asyncio
     import subprocess
 
@@ -461,3 +461,36 @@ def test_subprocesses(glib_loop):
         assert out == b'hey\n'
 
     glib_loop.run_until_complete(coro())
+
+
+def test_subprocesses_readline_without_closure(glib_loop):
+    # needed to ensure events.get_child_watcher() returns the right object
+    import gbulb
+    gbulb.install()
+
+    @asyncio.coroutine
+    def run():
+        proc = yield from asyncio.create_subprocess_exec(
+            'cat', stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE, loop=glib_loop)
+
+        try:
+            proc.stdin.write(b'test line\n')
+            yield from proc.stdin.drain()
+
+            line = yield from asyncio.wait_for(
+                proc.stdout.readline(), timeout=5, loop=glib_loop)
+            assert line == b'test line\n'
+
+            proc.stdin.close()
+
+            line = yield from asyncio.wait_for(
+                proc.stdout.readline(), timeout=5, loop=glib_loop)
+            assert line == b''
+        finally:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+
+    glib_loop.run_until_complete(run())
