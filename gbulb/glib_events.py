@@ -422,6 +422,10 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
             else:
                 channel = GLib.IOChannel.unix_new(fd)
 
+            # disabling buffering requires setting the encoding to None
+            channel.set_encoding(None)
+            channel.set_buffered(False)
+
             self._channels[sock_id] = channel
         return channel
 

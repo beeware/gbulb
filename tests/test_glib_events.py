@@ -494,3 +494,42 @@ def test_subprocesses_readline_without_closure(glib_loop):
                 pass
 
     glib_loop.run_until_complete(run())
+
+
+def test_sockets(glib_loop):
+    server_done = asyncio.Event(loop=glib_loop)
+    server_success = False
+
+    @asyncio.coroutine
+    def cb(reader, writer):
+        nonlocal server_success
+
+        writer.write(b'cool data\n')
+        yield from writer.drain()
+
+        print('reading')
+        d = yield from reader.readline()
+        print('hrm', d)
+        server_success = d == b'thank you\n'
+
+        writer.close()
+        server_done.set()
+
+    @asyncio.coroutine
+    def run():
+        s = yield from asyncio.start_server(cb, '127.0.0.1', 0)
+        reader, writer = yield from asyncio.open_connection('127.0.0.1', s.sockets[0].getsockname()[-1], loop=glib_loop)
+
+        d = yield from reader.readline()
+        assert d == b'cool data\n'
+
+        writer.write(b'thank you\n')
+        yield from writer.drain()
+
+        writer.close()
+
+        yield from server_done.wait()
+
+        assert server_success
+
+    glib_loop.run_until_complete(run())
