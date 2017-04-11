@@ -518,7 +518,7 @@ def test_sockets(glib_loop):
 
     @asyncio.coroutine
     def run():
-        s = yield from asyncio.start_server(cb, '127.0.0.1', 0)
+        s = yield from asyncio.start_server(cb, '127.0.0.1', 0, loop=glib_loop)
         reader, writer = yield from asyncio.open_connection('127.0.0.1', s.sockets[0].getsockname()[-1], loop=glib_loop)
 
         d = yield from reader.readline()
