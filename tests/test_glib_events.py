@@ -462,6 +462,8 @@ def test_subprocesses_read_after_closure(glib_loop):
         out = yield from proc.stdout.read()
         assert out == b'hey\n'
 
+        yield from proc.wait()
+
     glib_loop.run_until_complete(coro())
 
 
@@ -490,10 +492,7 @@ def test_subprocesses_readline_without_closure(glib_loop):
                 proc.stdout.readline(), timeout=5, loop=glib_loop)
             assert line == b''
         finally:
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                pass
+            yield from proc.wait()
 
     glib_loop.run_until_complete(run())
 
