@@ -146,11 +146,10 @@ class TestBaseGLibEventLoop:
             called = True
             glib_loop.stop()
 
-        os.close(rfd)
-        os.close(wfd)
-
         glib_loop.add_writer(wfd, callback)
         glib_loop.run_forever()
+        os.close(rfd)
+        os.close(wfd)
 
         assert called, 'callback handler didnt fire'
 
@@ -166,11 +165,14 @@ class TestBaseGLibEventLoop:
             called = True
             glib_loop.stop()
 
+        glib_loop.add_reader(rfd, callback)
+
+        os.write(wfd, b'hey')
+
+        glib_loop.run_forever()
+
         os.close(rfd)
         os.close(wfd)
-
-        glib_loop.add_reader(rfd, callback)
-        glib_loop.run_forever()
 
         assert called, 'callback handler didnt fire'
 
@@ -181,10 +183,10 @@ class TestBaseGLibEventLoop:
 
         f = os.fdopen(rfd, 'r')
 
+        glib_loop.add_reader(f, None)
+
         os.close(rfd)
         os.close(wfd)
-
-        glib_loop.add_reader(f, None)
 
     @skipIf(is_windows, "Waiting on raw file descriptors only works for sockets on Windows")
     def test_add_writer_file(self, glib_loop):
@@ -193,10 +195,10 @@ class TestBaseGLibEventLoop:
 
         f = os.fdopen(wfd, 'r')
 
+        glib_loop.add_writer(f, None)
+
         os.close(rfd)
         os.close(wfd)
-
-        glib_loop.add_writer(f, None)
 
     @skipIf(is_windows, "Waiting on raw file descriptors only works for sockets on Windows")
     def test_remove_reader(self, glib_loop):
@@ -205,10 +207,10 @@ class TestBaseGLibEventLoop:
 
         f = os.fdopen(wfd, 'r')
 
+        glib_loop.add_reader(f, None)
+
         os.close(rfd)
         os.close(wfd)
-
-        glib_loop.add_reader(f, None)
 
         assert glib_loop.remove_reader(f)
         assert not glib_loop.remove_reader(f.fileno())
@@ -220,10 +222,10 @@ class TestBaseGLibEventLoop:
 
         f = os.fdopen(wfd, 'r')
 
+        glib_loop.add_writer(f, None)
+
         os.close(rfd)
         os.close(wfd)
-
-        glib_loop.add_writer(f, None)
 
         assert glib_loop.remove_writer(f)
         assert not glib_loop.remove_writer(f.fileno())
