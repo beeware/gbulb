@@ -17,6 +17,9 @@ from . import transports
 if hasattr(os, 'set_blocking'):
     def _set_nonblocking(fd):
         os.set_blocking(fd, False)
+elif sys.platform == 'win32':
+    def _set_nonblocking(fd):
+        pass
 else:
     import fcntl
 
