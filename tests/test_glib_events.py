@@ -430,6 +430,19 @@ class TestGLibEventLoop:
 
 
 @skipIf(is_windows, "Unix signal handlers are not supported on Windows")
+def test_signal_handling_with_multiple_invocations(glib_loop):
+    import os
+    import signal
+
+    glib_loop.call_later(0.01, os.kill, os.getpid(), signal.SIGINT)
+
+    with pytest.raises(KeyboardInterrupt):
+        glib_loop.run_forever()
+
+    glib_loop.run_until_complete(asyncio.sleep(0))
+
+
+@skipIf(is_windows, "Unix signal handlers are not supported on Windows")
 def test_default_signal_handling(glib_loop):
     import os
     import signal
