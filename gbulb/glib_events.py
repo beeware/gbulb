@@ -746,7 +746,7 @@ class GLibEventLoop(GLibBaseEventLoop):
                 "Recursively calling run_forever is forbidden. "
                 "To recursively run the event loop, call run().")
 
-        if hasattr(self._mainloop, "_quit_by_sigint"):
+        if hasattr(self, '_mainloop') and hasattr(self._mainloop, "_quit_by_sigint"):
             del self._mainloop._quit_by_sigint
 
         try:
