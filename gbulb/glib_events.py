@@ -685,6 +685,7 @@ class GLibEventLoop(GLibBaseEventLoop):
     def __init__(self, *, context=None, application=None):
         self._application = application
         self._running = False
+        self._argv = None
 
         super().__init__(context)
         if application is None:
@@ -706,7 +707,7 @@ class GLibEventLoop(GLibBaseEventLoop):
 
         try:
             if self._application is not None:
-                self._application.run(None)
+                self._application.run(self._argv)
             else:
                 self._mainloop.run()
         finally:
@@ -736,10 +737,12 @@ class GLibEventLoop(GLibBaseEventLoop):
 
         return future.result()
 
-    def run_forever(self, application=None):
+    def run_forever(self, application=None, argv=None):
         """Run the event loop until stop() is called."""
         if application is not None:
             self.set_application(application)
+        if argv is not None:
+            self.set_argv(argv)
 
         if self.is_running():
             raise RuntimeError(
@@ -812,6 +815,10 @@ class GLibEventLoop(GLibBaseEventLoop):
         self._application = application
         self._policy._application = application
         del self._mainloop
+
+    def set_argv(self, argv):
+        """Sets argv to be passed to Gio.Application.run()"""
+        self._argv = argv
 
 
 class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
