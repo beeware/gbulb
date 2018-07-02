@@ -725,7 +725,7 @@ class GLibEventLoop(GLibBaseEventLoop):
         def stop(f):
             self.stop()
 
-        future = tasks.async(future, loop=self)
+        future = tasks.ensure_future(future, loop=self)
         future.add_done_callback(stop)
         try:
             self.run_forever(**kw)
