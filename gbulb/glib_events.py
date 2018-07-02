@@ -39,6 +39,12 @@ if sys.platform == "win32":
 else:
     from asyncio.unix_events import AbstractChildWatcher
 
+# Keep compatibility with Python 3.4.0
+try:
+    tasks.ensure_future = tasks.ensure_future
+except AttributeError:
+    tasks.ensure_future = tasks.async
+
 
 class GLibChildWatcher(AbstractChildWatcher):
     def __init__(self):
