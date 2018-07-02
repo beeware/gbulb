@@ -39,11 +39,6 @@ if sys.platform == "win32":
 else:
     from asyncio.unix_events import AbstractChildWatcher
 
-# Keep compatibility with Python 3.4.0
-try:
-    tasks.ensure_future = tasks.ensure_future
-except AttributeError:
-    tasks.ensure_future = tasks.async
 
 
 class GLibChildWatcher(AbstractChildWatcher):
@@ -731,7 +726,12 @@ class GLibEventLoop(GLibBaseEventLoop):
         def stop(f):
             self.stop()
 
-        future = tasks.ensure_future(future, loop=self)
+        # Keep compatibility with Python 3.4.0
+        try:
+            future = tasks.ensure_future(future, loop=self)
+        except AttributeError:
+            future = tasks.async(future, loop=self)
+
         future.add_done_callback(stop)
         try:
             self.run_forever(**kw)
