@@ -40,7 +40,6 @@ else:
     from asyncio.unix_events import AbstractChildWatcher
 
 
-
 class GLibChildWatcher(AbstractChildWatcher):
     def __init__(self):
         self._sources = {}
@@ -283,19 +282,6 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
                             extra=None, server=None):
         """Create SSL transport."""
         if not sslproto._is_sslproto_available():
-            # Python 3.4.3 and below
-            if hasattr(self, "_make_legacy_ssl_transport"):
-                # HACK: Add compatibility aliases to make
-                #       `_SelectorSslTransport` somehow work, then reuse the
-                #       SSL transport code from the official library
-                self._add_reader = self.add_reader
-                self._remove_reader = self.remove_reader
-                self._add_writer = self.add_writer
-                self._remove_writer = self.remove_writer
-                return self._make_legacy_ssl_transport(
-                             rawsock, protocol, sslcontext, waiter,
-                             server_side=server_side, server_hostname=server_hostname,
-                             extra=extra, server=server)
             raise NotImplementedError("Proactor event loop requires Python 3.5"
                                       " or newer (ssl.MemoryBIO) to support "
                                       "SSL")
@@ -726,17 +712,10 @@ class GLibEventLoop(GLibBaseEventLoop):
         def stop(f):
             self.stop()
 
-        # Keep compatibility with Python 3.4.0
-        try:
-            future = tasks.ensure_future(future, loop=self)
-        except AttributeError:
-            future = tasks.async(future, loop=self)
-
+        future = tasks.ensure_future(future, loop=self)
         future.add_done_callback(stop)
-        try:
-            self.run_forever(**kw)
-        finally:
-            future.remove_done_callback(stop)
+        self.run_forever(**kw)
+        future.remove_done_callback(stop)
 
         if not future.done():
             raise RuntimeError('Event loop stopped before Future completed.')
