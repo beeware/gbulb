@@ -7,7 +7,7 @@ import socket
 import sys
 import threading
 import weakref
-from asyncio import events, futures, sslproto, tasks
+from asyncio import constants, events, futures, sslproto, tasks
 
 from gi.repository import GLib, Gio
 
@@ -361,7 +361,8 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         pass  # This is already done in `.select()`
 
     def _start_serving(self, protocol_factory, sock,
-                       sslcontext=None, server=None, backlog=100):
+                       sslcontext=None, server=None, backlog=100,
+                       ssl_handshake_timeout=getattr(constants, 'SSL_HANDSHAKE_TIMEOUT', 60.0)):
         self._transports[sock.fileno()] = server
 
         def server_loop(f=None):
@@ -370,6 +371,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
                     (conn, addr) = f.result()
                     protocol = protocol_factory()
                     if sslcontext is not None:
+                        # FIXME: add ssl_handshake_timeout to this call once 3.7 support is merged in.
                         self._make_ssl_transport(
                             conn, protocol, sslcontext, server_side=True,
                             extra={'peername': addr}, server=server)
