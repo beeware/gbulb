@@ -122,11 +122,15 @@ class GLibChildWatcher(AbstractChildWatcher):
 
 
 class GLibHandle(events.Handle):
-    __slots__ = ('_source', '_repeat')
+    __slots__ = ('_source', '_repeat', '_context')
 
-    def __init__(self, *, loop, source, repeat, callback, args):
+    def __init__(self, *, loop, source, repeat, callback, args, context=None):
         super().__init__(callback, args, loop)
 
+        if sys.version_info[:2] >= (3, 7) and context is None:
+            import contextvars
+            context = contextvars.copy_context()
+        self._context = context
         self._source = source
         self._repeat = repeat
         loop._handlers.add(self)
@@ -758,7 +762,7 @@ class GLibEventLoop(GLibBaseEventLoop):
             self.stop()
 
     # Methods scheduling callbacks.  All these return Handles.
-    def call_soon(self, callback, *args):
+    def call_soon(self, callback, *args, context=None):
         self._check_not_coroutine(callback, 'call_soon')
         source = GLib.Idle()
 
@@ -769,11 +773,13 @@ class GLibEventLoop(GLibBaseEventLoop):
             source=source,
             repeat=False,
             callback=callback,
-            args=args)
+            args=args,
+            context=context,
+        )
 
     call_soon_threadsafe = call_soon
 
-    def call_later(self, delay, callback, *args):
+    def call_later(self, delay, callback, *args, context=None):
         self._check_not_coroutine(callback, 'call_later')
 
         return GLibHandle(
@@ -781,12 +787,15 @@ class GLibEventLoop(GLibBaseEventLoop):
             source=GLib.Timeout(delay*1000) if delay > 0 else GLib.Idle(),
             repeat=False,
             callback=callback,
-            args=args)
+            args=args,
+            context=context,
+        )
 
-    def call_at(self, when, callback, *args):
+    def call_at(self, when, callback, *args, context=None):
         self._check_not_coroutine(callback, 'call_at')
 
-        return self.call_later(when - self.time(), callback, *args)
+        return self.call_later(
+            when - self.time(), callback, *args, context=context)
 
     def time(self):
         return GLib.get_monotonic_time() / 1000000
