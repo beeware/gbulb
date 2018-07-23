@@ -714,8 +714,10 @@ class GLibEventLoop(GLibBaseEventLoop):
 
         future = tasks.ensure_future(future, loop=self)
         future.add_done_callback(stop)
-        self.run_forever(**kw)
-        future.remove_done_callback(stop)
+        try:
+            self.run_forever(**kw)
+        finally:
+            future.remove_done_callback(stop)
 
         if not future.done():
             raise RuntimeError('Event loop stopped before Future completed.')
