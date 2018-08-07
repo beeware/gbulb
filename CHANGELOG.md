@@ -1,4 +1,16 @@
 # Change Log
+## [0.6.0] - 2018-08-06
+
+### Fixed
+ - Support for 3.7.
+
+### Added
+ - Preliminary Windows support. Please note that using subprocesses is known
+   not to work. Patches welcome.
+
+### Changed
+ - Support for 3.4 and below has been dropped.
+
 ## [0.5.3] - 2017-01-27
 
 ### Fixed
