@@ -283,15 +283,20 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
 
     def _make_ssl_transport(self, rawsock, protocol, sslcontext, waiter=None,
                             *, server_side=False, server_hostname=None,
-                            extra=None, server=None):
+                            extra=None, server=None, ssl_handshake_timeout=None):
         """Create SSL transport."""
-        if not sslproto._is_sslproto_available():
+        # sslproto._is_sslproto_available was removed from asyncio, starting from Python 3.7.
+        if hasattr(sslproto, '_is_sslproto_available') and not sslproto._is_sslproto_available():
             raise NotImplementedError("Proactor event loop requires Python 3.5"
                                       " or newer (ssl.MemoryBIO) to support "
                                       "SSL")
+        # Support for the ssl_handshake_timeout keyword argument was added in Python 3.7.
+        extra_protocol_kwargs = {}
+        if sys.version_info[:2] >= (3, 7):
+            extra_protocol_kwargs['ssl_handshake_timeout'] = ssl_handshake_timeout
 
         ssl_protocol = sslproto.SSLProtocol(self, protocol, sslcontext, waiter,
-                                            server_side, server_hostname)
+                                            server_side, server_hostname, **extra_protocol_kwargs)
         transports.SocketTransport(self, rawsock, ssl_protocol, extra=extra, server=server)
         return ssl_protocol._app_transport
 
