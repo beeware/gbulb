@@ -1,4 +1,9 @@
 # Change Log
+## [0.6.1] - 2018-08-09
+
+### Fixed
+ - Support for 3.7, for real this time. Thank you Philippe Normand!
+
 ## [0.6.0] - 2018-08-06
 
 ### Fixed
