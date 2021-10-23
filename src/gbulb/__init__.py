@@ -1,5 +1,5 @@
-from .glib_events import *
-from .utils import *
+from .glib_events import *  # noqa: F401,F403
+from .utils import *  # noqa: F401,F403
 
 # __all__ = [
 #     '__version__',
@@ -13,4 +13,4 @@ from .utils import *
 # __version__ = '1.2.3'       # Final Release
 # __version__ = '1.2.3.post1' # Post Release 1
 
-__version__ = '0.6.1'
+__version__ = "0.6.1"

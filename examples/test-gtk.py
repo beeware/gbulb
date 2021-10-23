@@ -57,7 +57,7 @@ class ProgressBarWindow(Gtk.Window):
             self.progressbar.set_fraction(0.25)
             self.progressbar.set_text("do some magic!")
             self.progressbar.set_show_text(True)
-            self._running = asyncio.async(coro())
+            self._running = asyncio.ensure_future(coro())
 
     def on_stop(self, button):
         if self._running:

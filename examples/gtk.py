@@ -14,6 +14,7 @@ def counter(label):
         yield from asyncio.sleep(1)
         i += 1
 
+
 def main():
     gbulb.install(gtk=True)
     loop = gbulb.get_event_loop()
@@ -29,8 +30,9 @@ def main():
 
     win.show_all()
 
-    asyncio.async(counter(display))
+    asyncio.ensure_future(counter(display))
     loop.run_forever()
+
 
 if __name__ == '__main__':
     main()

@@ -13,10 +13,10 @@ src/gbulb.egg-info/SOURCES.txt
 src/gbulb.egg-info/dependency_links.txt
 src/gbulb.egg-info/not-zip-safe
 src/gbulb.egg-info/top_level.txt
+tests/conftest.py
 tests/test_glib_events.py
 tests/test_gtk.py
 tests/test_utils.py
-tests/utils.py
 tests/docker-images/Makefile
 tests/docker-images/base.Dockerfile
 tests/docker-images/python.Dockerfile
