@@ -9,7 +9,12 @@ import threading
 import weakref
 from asyncio import constants, events, sslproto, tasks, CancelledError
 
-from gi.repository import GLib, Gio
+try:
+    from gi.repository import Glib, Gio
+except ImportError:  # pragma: no cover
+    Glib = None
+    Gio = None
+
 
 from . import transports
 
