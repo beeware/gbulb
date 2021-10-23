@@ -1,7 +1,7 @@
 import collections
 import socket
 import subprocess
-from asyncio import base_subprocess, futures, transports
+from asyncio import base_subprocess, futures, transports, CancelledError
 
 
 class BaseTransport(transports.BaseTransport):
@@ -159,7 +159,7 @@ class ReadTransport(BaseTransport, transports.ReadTransport):
             self._force_close(exc)
         except OSError as exc:
             self._fatal_error(exc, 'Fatal read error on pipe transport')
-        except futures.CancelledError:
+        except CancelledError:
             if not self._closing:
                 raise
         except futures.InvalidStateError:

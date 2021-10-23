@@ -7,7 +7,7 @@ import socket
 import sys
 import threading
 import weakref
-from asyncio import constants, events, futures, sslproto, tasks
+from asyncio import constants, events, futures, sslproto, tasks, CancelledError
 
 from gi.repository import GLib, Gio
 
@@ -382,7 +382,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
                         'socket': sock,
                     })
                     sock.close()
-            except futures.CancelledError:
+            except CancelledError:
                 sock.close()
             else:
                 self._accept_futures[sock.fileno()] = f
@@ -549,7 +549,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
             # Coroutine closing the accept socket if the future is cancelled
             try:
                 return (yield from future)
-            except futures.CancelledError:
+            except CancelledError:
                 sock.close()
                 raise
 
