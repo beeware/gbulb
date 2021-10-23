@@ -366,8 +366,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         channel = self._channel_from_fileobj(pipe)
         return transports.PipeWriteTransport(self, channel, protocol, waiter, extra)
 
-    @asyncio.coroutine
-    def _make_subprocess_transport(
+    async def _make_subprocess_transport(
         self,
         protocol,
         args,
@@ -400,14 +399,14 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
                 transport.get_pid(), self._child_watcher_callback, transport
             )
             try:
-                yield from waiter
+                await waiter
             except Exception as exc:
                 err = exc
             else:
                 err = None
             if err is not None:
                 transport.close()
-                yield from transport._wait()
+                await transport._wait()
                 raise err
 
         return transport
@@ -629,11 +628,10 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         def sock_connection_received(sock):
             return (True, sock.accept())
 
-        @asyncio.coroutine
-        def accept_coro(future, conn):
+        async def accept_coro(future, conn):
             # Coroutine closing the accept socket if the future is cancelled
             try:
-                return (yield from future)
+                return (await future)
             except CancelledError:
                 sock.close()
                 raise

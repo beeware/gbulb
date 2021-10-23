@@ -67,8 +67,7 @@ class TestGLibHandle:
         assert call_manager.mock_calls == expected_calls
 
 
-@asyncio.coroutine
-def no_op_coro():
+async def no_op_coro():
     pass
 
 
@@ -112,6 +111,7 @@ class TestBaseGLibEventLoop:
         assert not glib_loop.remove_signal_handler(signal.SIGHUP)
 
     @skipIf(is_windows, "Unix signal handlers are not supported on Windows")
+    @pytest.mark.filterwarnings('ignore:g_unix_signal_source_new')
     def test_remove_signal_handler_sigkill(self, glib_loop):
         import signal
 
@@ -119,6 +119,7 @@ class TestBaseGLibEventLoop:
             glib_loop.add_signal_handler(signal.SIGKILL, None)
 
     @skipIf(is_windows, "Unix signal handlers are not supported on Windows")
+    @pytest.mark.filterwarnings('ignore:g_unix_signal_source_new')
     def test_remove_signal_handler_sigill(self, glib_loop):
         import signal
 
@@ -128,10 +129,9 @@ class TestBaseGLibEventLoop:
     def test_run_until_complete_early_stop(self, glib_loop):
         import asyncio
 
-        @asyncio.coroutine
-        def coro():
+        async def coro():
             glib_loop.call_soon(glib_loop.stop)
-            yield from asyncio.sleep(5)
+            await asyncio.sleep(5)
 
         with pytest.raises(RuntimeError):
             glib_loop.run_until_complete(coro())
@@ -487,25 +487,23 @@ def test_subprocesses_read_after_closure(glib_loop):
 
     gbulb.install()
 
-    @asyncio.coroutine
-    def coro():
-        proc = yield from asyncio.create_subprocess_exec(
+    async def coro():
+        proc = await asyncio.create_subprocess_exec(
             "cat",
             stdout=subprocess.PIPE,
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            loop=glib_loop,
         )
 
         proc.stdin.write(b"hey\n")
-        yield from proc.stdin.drain()
+        await proc.stdin.drain()
 
         proc.stdin.close()
 
-        out = yield from proc.stdout.read()
+        out = await proc.stdout.read()
         assert out == b"hey\n"
 
-        yield from proc.wait()
+        await proc.wait()
 
     glib_loop.run_until_complete(coro())
 
@@ -516,71 +514,64 @@ def test_subprocesses_readline_without_closure(glib_loop):
 
     gbulb.install()
 
-    @asyncio.coroutine
-    def run():
-        proc = yield from asyncio.create_subprocess_exec(
+    async def run():
+        proc = await asyncio.create_subprocess_exec(
             "cat",
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            loop=glib_loop,
         )
 
         try:
             proc.stdin.write(b"test line\n")
-            yield from proc.stdin.drain()
+            await proc.stdin.drain()
 
-            line = yield from asyncio.wait_for(
-                proc.stdout.readline(), timeout=5, loop=glib_loop
-            )
+            line = await asyncio.wait_for(proc.stdout.readline(), timeout=5)
             assert line == b"test line\n"
 
             proc.stdin.close()
 
-            line = yield from asyncio.wait_for(
-                proc.stdout.readline(), timeout=5, loop=glib_loop
-            )
+            line = await asyncio.wait_for(proc.stdout.readline(), timeout=5)
             assert line == b""
         finally:
-            yield from proc.wait()
+            await proc.wait()
 
     glib_loop.run_until_complete(run())
 
 
 def test_sockets(glib_loop):
-    server_done = asyncio.Event(loop=glib_loop)
+    server_done = asyncio.Event()
+    server_done._loop = glib_loop
     server_success = False
 
-    @asyncio.coroutine
-    def cb(reader, writer):
+    async def cb(reader, writer):
         nonlocal server_success
 
         writer.write(b"cool data\n")
-        yield from writer.drain()
+        await writer.drain()
 
         print("reading")
-        d = yield from reader.readline()
+        d = await reader.readline()
         print("hrm", d)
         server_success = d == b"thank you\n"
 
         writer.close()
         server_done.set()
 
-    @asyncio.coroutine
-    def run():
-        s = yield from asyncio.start_server(cb, "127.0.0.1", 0, loop=glib_loop)
-        reader, writer = yield from asyncio.open_connection(
-            "127.0.0.1", s.sockets[0].getsockname()[-1], loop=glib_loop
+    async def run():
+        s = await asyncio.start_server(cb, "127.0.0.1", 0)
+        reader, writer = await asyncio.open_connection(
+            "127.0.0.1", s.sockets[0].getsockname()[-1]
         )
 
-        d = yield from reader.readline()
+        d = await reader.readline()
         assert d == b"cool data\n"
 
         writer.write(b"thank you\n")
-        yield from writer.drain()
+        await writer.drain()
 
         writer.close()
 
-        yield from server_done.wait()
+        await server_done.wait()
 
         assert server_success
 
