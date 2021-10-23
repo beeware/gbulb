@@ -1,8 +1,9 @@
 import pytest
 
-from utils import gtk_loop, gtk_policy
-
 try:
+    import gi
+    gi.require_version('Gtk', '3.0')
+
     from gi.repository import Gtk
 except ImportError:  # pragma: no cover
     Gtk = None
@@ -12,6 +13,7 @@ except ImportError:  # pragma: no cover
 class TestGtkEventLoopPolicy:
     def test_new_event_loop(self, gtk_policy):
         from gbulb.gtk import GtkEventLoop
+
         a = gtk_policy.new_event_loop()
         b = gtk_policy.new_event_loop()
 
@@ -33,16 +35,16 @@ class TestGtkEventLoopPolicy:
         def inner():
             nonlocal loop_count
             i = loop_count
-            print('starting loop', loop_count)
+            print("starting loop", loop_count)
             loop_count += 1
 
             if loop_count == 10:
-                print('loop {} stopped'.format(i))
+                print("loop {} stopped".format(i))
                 gtk_loop.stop()
             else:
                 gtk_loop.call_soon(inner)
                 gtk_loop.run()
-                print('loop {} stopped'.format(i))
+                print("loop {} stopped".format(i))
                 gtk_loop.stop()
 
         gtk_loop.call_soon(inner)

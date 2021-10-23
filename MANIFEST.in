@@ -1,8 +1,13 @@
 include AUTHORS.rst
-include CHANGELOG.md
+include CONTRIBUTING.md
+include CHANGELOG.rst
 include LICENSE
-include README.md
+include README.rst
+include tox.ini
+recursive-include changes *.rst
 recursive-include examples *
 recursive-exclude examples *.pyc *.pyo
 recursive-include tests *
 recursive-exclude tests *.pyc *.pyo
+recursive-include src *
+recursive-exclude src *.pyc *.pyo

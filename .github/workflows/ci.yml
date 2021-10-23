@@ -1,0 +1,80 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  beefore:
+    name: Pre-test checks
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 4
+      matrix:
+        task:
+        - 'flake8'
+        - 'towncrier-check'
+        - 'package'
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v1
+      with:
+        python-version: '3.9'
+    - name: Install dependencies
+      run: |
+        sudo apt-get install -y python3-dev python3-gi gir1.2-gtk-3.0 libgirepository1.0-dev pkg-config
+        pip install --upgrade pip
+        pip install --upgrade setuptools
+        pip install tox
+    - name: Run pre-test check
+      run: |
+        tox -e ${{ matrix.task }}
+
+  smoke:
+    name: Smoke test (3.6)
+    needs: beefore
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up Python 3.6
+      uses: actions/setup-python@v1
+      with:
+        python-version: '3.6'
+    - name: Install dependencies
+      run: |
+        sudo apt-get install -y python3-dev python3-gi gir1.2-gtk-3.0 libgirepository1.0-dev pkg-config
+        pip install --upgrade pip
+        pip install --upgrade setuptools
+        pip install tox
+    - name: Test
+      run: |
+        tox -e py
+
+  python-versions:
+    # Only run this and subsequent steps on branches.
+    # `github.head_ref` only exists on pull requests.
+    if: github.head_ref
+    name: Python compatibility test
+    needs: smoke
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 4
+      matrix:
+        python-version: ['3.7', '3.8', '3.9', '3.10']
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v1
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        sudo apt-get install -y python3-dev python3-gi gir1.2-gtk-3.0 libgirepository1.0-dev pkg-config
+        pip install --upgrade pip
+        pip install --upgrade setuptools
+        pip install tox
+    - name: Test
+      run: |
+        tox -e py

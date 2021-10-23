@@ -7,19 +7,30 @@ import socket
 import sys
 import threading
 import weakref
-from asyncio import constants, events, futures, sslproto, tasks
+from asyncio import constants, events, sslproto, tasks, CancelledError
 
-from gi.repository import GLib, Gio
+try:
+    from gi.repository import GLib, Gio
+except ImportError:  # pragma: no cover
+    GLib = None
+    Gio = None
+
 
 from . import transports
 
 
-if hasattr(os, 'set_blocking'):
+if hasattr(os, "set_blocking"):
+
     def _set_nonblocking(fd):
         os.set_blocking(fd, False)
-elif sys.platform == 'win32':
+
+
+elif sys.platform == "win32":
+
     def _set_nonblocking(fd):
         pass
+
+
 else:
     import fcntl
 
@@ -28,14 +39,18 @@ else:
         flags = flags | os.O_NONBLOCK
         fcntl.fcntl(fd, fcntl.F_SETFL, flags)
 
-__all__ = ['GLibEventLoop', 'GLibEventLoopPolicy']
+
+__all__ = ["GLibEventLoop", "GLibEventLoopPolicy"]
 
 
 # The Windows `asyncio` implementation doesn't actually use this, but
 # `glib` abstracts so nicely over this that we can use it on any platform
 if sys.platform == "win32":
+
     class AbstractChildWatcher:
         pass
+
+
 else:
     from asyncio.unix_events import AbstractChildWatcher
 
@@ -48,17 +63,22 @@ class GLibChildWatcher(AbstractChildWatcher):
     # On windows on has to open a process handle for the given PID number
     # before it's possible to use GLib's `child_watch_add` on it
     if sys.platform == "win32":
-
         def _create_handle_for_pid(self, pid):
             import _winapi
+
             return _winapi.OpenProcess(0x00100400, 0, pid)
 
         def _close_process_handle(self, handle):
             import _winapi
+
             _winapi.CloseHandle(handle)
+
     else:
-        _create_handle_for_pid = lambda self, pid: pid
-        _close_process_handle = lambda self, pid: None
+        def _create_handle_for_pid(self, pid):
+            return pid
+
+        def _close_process_handle(self, pid):
+            return None
 
     def attach_loop(self, loop):
         # just ignored
@@ -122,13 +142,14 @@ class GLibChildWatcher(AbstractChildWatcher):
 
 
 class GLibHandle(events.Handle):
-    __slots__ = ('_source', '_repeat', '_context')
+    __slots__ = ("_source", "_repeat", "_context")
 
     def __init__(self, *, loop, source, repeat, callback, args, context=None):
         super().__init__(callback, args, loop)
 
         if sys.version_info[:2] >= (3, 7) and context is None:
             import contextvars
+
             context = contextvars.copy_context()
         self._context = context
         self._source = source
@@ -156,12 +177,15 @@ class GLibHandle(events.Handle):
 
 
 if sys.platform == "win32":
+
     class GLibBaseEventLoopPlatformExt:
         def __init__(self):
             pass
 
         def close(self):
             pass
+
+
 else:
     from asyncio import unix_events
 
@@ -173,6 +197,7 @@ else:
         Note that both `__init__` and `close` DO NOT and SHOULD NOT ever call their parent
         implementation!
         """
+
         def __init__(self):
             self._sighandlers = {}
 
@@ -196,11 +221,8 @@ else:
             assert sig not in self._sighandlers
 
             self._sighandlers[sig] = GLibHandle(
-                loop=self,
-                source=s,
-                repeat=True,
-                callback=callback,
-                args=args)
+                loop=self, source=s, repeat=True, callback=callback, args=args
+            )
 
         def remove_signal_handler(self, sig):
             try:
@@ -263,11 +285,12 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
                 # Schedule fake callback that will trigger an event and cause the loop to terminate
                 # after the given number of seconds
                 handle = GLibHandle(
-                        loop=self,
-                        source=GLib.Timeout(timeout*1000),
-                        repeat=False,
-                        callback=lambda: None,
-                        args=())
+                    loop=self,
+                    source=GLib.Timeout(timeout * 1000),
+                    repeat=False,
+                    callback=lambda: None,
+                    args=(),
+                )
                 try:
                     self._context.iteration(True)
                 finally:
@@ -276,68 +299,114 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         finally:
             self._context.release()
 
-    def _make_socket_transport(self, sock, protocol, waiter=None, *,
-                               extra=None, server=None):
+    def _make_socket_transport(
+        self, sock, protocol, waiter=None, *, extra=None, server=None
+    ):
         """Create socket transport."""
         return transports.SocketTransport(self, sock, protocol, waiter, extra, server)
 
-    def _make_ssl_transport(self, rawsock, protocol, sslcontext, waiter=None,
-                            *, server_side=False, server_hostname=None,
-                            extra=None, server=None, ssl_handshake_timeout=None):
+    def _make_ssl_transport(
+        self,
+        rawsock,
+        protocol,
+        sslcontext,
+        waiter=None,
+        *,
+        server_side=False,
+        server_hostname=None,
+        extra=None,
+        server=None,
+        ssl_handshake_timeout=None
+    ):
         """Create SSL transport."""
         # sslproto._is_sslproto_available was removed from asyncio, starting from Python 3.7.
-        if hasattr(sslproto, '_is_sslproto_available') and not sslproto._is_sslproto_available():
-            raise NotImplementedError("Proactor event loop requires Python 3.5"
-                                      " or newer (ssl.MemoryBIO) to support "
-                                      "SSL")
+        if (
+            hasattr(sslproto, "_is_sslproto_available")
+            and not sslproto._is_sslproto_available()
+        ):
+            raise NotImplementedError(
+                "Proactor event loop requires Python 3.5"
+                " or newer (ssl.MemoryBIO) to support "
+                "SSL"
+            )
         # Support for the ssl_handshake_timeout keyword argument was added in Python 3.7.
         extra_protocol_kwargs = {}
         if sys.version_info[:2] >= (3, 7):
-            extra_protocol_kwargs['ssl_handshake_timeout'] = ssl_handshake_timeout
+            extra_protocol_kwargs["ssl_handshake_timeout"] = ssl_handshake_timeout
 
-        ssl_protocol = sslproto.SSLProtocol(self, protocol, sslcontext, waiter,
-                                            server_side, server_hostname, **extra_protocol_kwargs)
-        transports.SocketTransport(self, rawsock, ssl_protocol, extra=extra, server=server)
+        ssl_protocol = sslproto.SSLProtocol(
+            self,
+            protocol,
+            sslcontext,
+            waiter,
+            server_side,
+            server_hostname,
+            **extra_protocol_kwargs
+        )
+        transports.SocketTransport(
+            self, rawsock, ssl_protocol, extra=extra, server=server
+        )
         return ssl_protocol._app_transport
 
-    def _make_datagram_transport(self, sock, protocol,
-                                 address=None, waiter=None, extra=None):
+    def _make_datagram_transport(
+        self, sock, protocol, address=None, waiter=None, extra=None
+    ):
         """Create datagram transport."""
-        return transports.DatagramTransport(self, sock, protocol, address, waiter, extra)
+        return transports.DatagramTransport(
+            self, sock, protocol, address, waiter, extra
+        )
 
-    def _make_read_pipe_transport(self, pipe, protocol, waiter=None,
-                                  extra=None):
+    def _make_read_pipe_transport(self, pipe, protocol, waiter=None, extra=None):
         """Create read pipe transport."""
         channel = self._channel_from_fileobj(pipe)
         return transports.PipeReadTransport(self, channel, protocol, waiter, extra)
 
-    def _make_write_pipe_transport(self, pipe, protocol, waiter=None,
-                                   extra=None):
+    def _make_write_pipe_transport(self, pipe, protocol, waiter=None, extra=None):
         """Create write pipe transport."""
         channel = self._channel_from_fileobj(pipe)
         return transports.PipeWriteTransport(self, channel, protocol, waiter, extra)
 
-    @asyncio.coroutine
-    def _make_subprocess_transport(self, protocol, args, shell,
-                                   stdin, stdout, stderr, bufsize,
-                                   extra=None, **kwargs):
+    async def _make_subprocess_transport(
+        self,
+        protocol,
+        args,
+        shell,
+        stdin,
+        stdout,
+        stderr,
+        bufsize,
+        extra=None,
+        **kwargs
+    ):
         """Create subprocess transport."""
         with events.get_child_watcher() as watcher:
             waiter = asyncio.Future(loop=self)
-            transport = transports.SubprocessTransport(self, protocol, args, shell,
-                                                       stdin, stdout, stderr, bufsize,
-                                                       waiter=waiter, extra=extra, **kwargs)
+            transport = transports.SubprocessTransport(
+                self,
+                protocol,
+                args,
+                shell,
+                stdin,
+                stdout,
+                stderr,
+                bufsize,
+                waiter=waiter,
+                extra=extra,
+                **kwargs
+            )
 
-            watcher.add_child_handler(transport.get_pid(), self._child_watcher_callback, transport)
+            watcher.add_child_handler(
+                transport.get_pid(), self._child_watcher_callback, transport
+            )
             try:
-                yield from waiter
+                await waiter
             except Exception as exc:
                 err = exc
             else:
                 err = None
             if err is not None:
                 transport.close()
-                yield from transport._wait()
+                await transport._wait()
                 raise err
 
         return transport
@@ -352,9 +421,15 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         """Process selector events."""
         pass  # This is already done in `.select()`
 
-    def _start_serving(self, protocol_factory, sock,
-                       sslcontext=None, server=None, backlog=100,
-                       ssl_handshake_timeout=getattr(constants, 'SSL_HANDSHAKE_TIMEOUT', 60.0)):
+    def _start_serving(
+        self,
+        protocol_factory,
+        sock,
+        sslcontext=None,
+        server=None,
+        backlog=100,
+        ssl_handshake_timeout=getattr(constants, "SSL_HANDSHAKE_TIMEOUT", 60.0),
+    ):
         self._transports[sock.fileno()] = server
 
         def server_loop(f=None):
@@ -365,24 +440,31 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
                     if sslcontext is not None:
                         # FIXME: add ssl_handshake_timeout to this call once 3.7 support is merged in.
                         self._make_ssl_transport(
-                            conn, protocol, sslcontext, server_side=True,
-                            extra={'peername': addr}, server=server)
+                            conn,
+                            protocol,
+                            sslcontext,
+                            server_side=True,
+                            extra={"peername": addr},
+                            server=server,
+                        )
                     else:
                         self._make_socket_transport(
-                            conn, protocol,
-                            extra={'peername': addr}, server=server)
+                            conn, protocol, extra={"peername": addr}, server=server
+                        )
                 if self.is_closed():
                     return
                 f = self.sock_accept(sock)
             except OSError as exc:
                 if sock.fileno() != -1:
-                    self.call_exception_handler({
-                        'message': 'Accept failed on a socket',
-                        'exception': exc,
-                        'socket': sock,
-                    })
+                    self.call_exception_handler(
+                        {
+                            "message": "Accept failed on a socket",
+                            "exception": exc,
+                            "socket": sock,
+                        }
+                    )
                     sock.close()
-            except futures.CancelledError:
+            except CancelledError:
                 sock.close()
             else:
                 self._accept_futures[sock.fileno()] = f
@@ -398,8 +480,8 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
     def _check_not_coroutine(self, callback, name):
         """Check whether the given callback is a coroutine or not."""
         from asyncio import coroutines
-        if (coroutines.iscoroutine(callback) or
-                coroutines.iscoroutinefunction(callback)):
+
+        if coroutines.iscoroutine(callback) or coroutines.iscoroutinefunction(callback):
             raise TypeError("coroutines cannot be used with {}()".format(name))
 
     def _ensure_fd_no_transport(self, fd):
@@ -412,8 +494,11 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
             pass
         else:
             if not hasattr(transport, "is_closing") or not transport.is_closing():
-                raise RuntimeError('File descriptor {!r} is used by transport {!r}'
-                                   .format(fd, transport))
+                raise RuntimeError(
+                    "File descriptor {!r} is used by transport {!r}".format(
+                        fd, transport
+                    )
+                )
 
     def _channel_from_socket(self, sock):
         """Create GLib IOChannel for the given file object.
@@ -500,11 +585,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         # handle's cancellation machinery
         future = asyncio.Future(loop=self)
         future.handle = GLibHandle(
-            loop=self,
-            source=source,
-            repeat=True,
-            callback=handle_ready,
-            args=args
+            loop=self, source=source, repeat=True, callback=handle_ready, args=args
         )
         return future
 
@@ -514,7 +595,9 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         if errno != 0:
             if sys.platform == "win32":
                 msg = socket.errorTab.get(errno, "Error {0}".format(errno))
-                raise OSError(errno, "[WinError {0}] {1}".format(errno, msg), None, errno)
+                raise OSError(
+                    errno, "[WinError {0}] {1}".format(errno, msg), None, errno
+                )
             else:
                 raise OSError(errno, os.strerror(errno))
 
@@ -535,6 +618,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         def sock_finish_connect(sock):
             self._socket_handle_errors(sock)
             return (True, sock)
+
         return self._delayed(source, sock_finish_connect, sock)
 
     def sock_accept(self, sock):
@@ -544,12 +628,11 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         def sock_connection_received(sock):
             return (True, sock.accept())
 
-        @asyncio.coroutine
-        def accept_coro(future, conn):
+        async def accept_coro(future, conn):
             # Coroutine closing the accept socket if the future is cancelled
             try:
-                return (yield from future)
-            except futures.CancelledError:
+                return (await future)
+            except CancelledError:
                 sock.close()
                 raise
 
@@ -558,22 +641,34 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
 
     def sock_recv(self, sock, nbytes, flags=0):
         channel = self._channel_from_socket(sock)
-        read_func = lambda channel, nbytes: sock.recv(nbytes, flags)
+
+        def read_func(channel, nbytes):
+            return sock.recv(nbytes, flags)
+
         return self._channel_read(channel, nbytes, read_func)
 
     def sock_recvfrom(self, sock, nbytes, flags=0):
         channel = self._channel_from_socket(sock)
-        read_func = lambda channel, nbytes: sock.recvfrom(nbytes, flags)
+
+        def read_func(channel, nbytes):
+            return sock.recvfrom(nbytes, flags)
+
         return self._channel_read(channel, nbytes, read_func)
 
     def sock_sendall(self, sock, buf, flags=0):
         channel = self._channel_from_socket(sock)
-        write_func = lambda channel, buf: sock.send(buf, flags)
+
+        def write_func(channel, buf):
+            return sock.send(buf, flags)
+
         return self._channel_write(channel, buf, write_func)
 
     def sock_sendallto(self, sock, buf, addr, flags=0):
         channel = self._channel_from_socket(sock)
-        write_func = lambda channel, buf: sock.sendto(buf, flags, addr)
+
+        def write_func(channel, buf):
+            return sock.sendto(buf, flags, addr)
+
         return self._channel_write(channel, buf, write_func)
 
     #####################################
@@ -581,12 +676,14 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
     #####################################
     def _channel_read(self, channel, nbytes, read_func=None):
         if read_func is None:
-            read_func = lambda channel, nbytes: channel.read(nbytes)
+            def read_func(channel, nbytes):
+                return channel.read(nbytes)
 
         source = GLib.io_create_watch(channel, GLib.IO_IN | GLib.IO_HUP)
 
         def channel_readable(read_func, channel, nbytes):
             return (True, read_func(channel, nbytes))
+
         return self._delayed(source, channel_readable, read_func, channel, nbytes)
 
     def _channel_write(self, channel, buf, write_func=None):
@@ -595,7 +692,9 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
             # returns 0
             # gi.overrides.GLib.write has an isinstance(buf, bytes) check, so
             # we can't give it a bytearray or a memoryview.
-            write_func = lambda channel, buf: channel.write(bytes(buf))
+            def write_func(channel, buf):
+                return channel.write(bytes(buf))
+
         buflen = len(buf)
 
         # Fast-path: If there is enough room in the OS buffer all data can be written synchronously
@@ -624,6 +723,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
             else:
                 del buf[0:nbytes]
                 return (False, buflen)
+
         return self._delayed(source, channel_writable, buflen, write_func, channel, buf)
 
     def add_reader(self, fileobj, callback, *args):
@@ -632,15 +732,14 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
 
         self.remove_reader(fd)
         channel = self._channel_from_socket(fd)
-        source = GLib.io_create_watch(channel, GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR | GLib.IO_NVAL)
+        source = GLib.io_create_watch(
+            channel, GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR | GLib.IO_NVAL
+        )
 
         assert fd not in self._readers
         self._readers[fd] = GLibHandle(
-            loop=self,
-            source=source,
-            repeat=True,
-            callback=callback,
-            args=args)
+            loop=self, source=source, repeat=True, callback=callback, args=args
+        )
 
     def remove_reader(self, fileobj):
         fd = self._fileobj_to_fd(fileobj)
@@ -662,11 +761,8 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
 
         assert fd not in self._writers
         self._writers[fd] = GLibHandle(
-            loop=self,
-            source=source,
-            repeat=True,
-            callback=callback,
-            args=args)
+            loop=self, source=source, repeat=True, callback=callback, args=args
+        )
 
     def remove_writer(self, fileobj):
         fd = self._fileobj_to_fd(fileobj)
@@ -694,9 +790,14 @@ class GLibEventLoop(GLibBaseEventLoop):
 
     def run(self):
         recursive = self.is_running()
-        if not recursive and hasattr(events, "_get_running_loop") and events._get_running_loop():
+        if (
+            not recursive
+            and hasattr(events, "_get_running_loop")
+            and events._get_running_loop()
+        ):
             raise RuntimeError(
-                'Cannot run the event loop while another loop is running')
+                "Cannot run the event loop while another loop is running"
+            )
 
         if not recursive:
             self._running = True
@@ -731,7 +832,7 @@ class GLibEventLoop(GLibBaseEventLoop):
             future.remove_done_callback(stop)
 
         if not future.done():
-            raise RuntimeError('Event loop stopped before Future completed.')
+            raise RuntimeError("Event loop stopped before Future completed.")
 
         return future.result()
 
@@ -745,9 +846,10 @@ class GLibEventLoop(GLibBaseEventLoop):
         if self.is_running():
             raise RuntimeError(
                 "Recursively calling run_forever is forbidden. "
-                "To recursively run the event loop, call run().")
+                "To recursively run the event loop, call run()."
+            )
 
-        if hasattr(self, '_mainloop') and hasattr(self._mainloop, "_quit_by_sigint"):
+        if hasattr(self, "_mainloop") and hasattr(self._mainloop, "_quit_by_sigint"):
             del self._mainloop._quit_by_sigint
 
         try:
@@ -757,7 +859,7 @@ class GLibEventLoop(GLibBaseEventLoop):
 
     # Methods scheduling callbacks.  All these return Handles.
     def call_soon(self, callback, *args, context=None):
-        self._check_not_coroutine(callback, 'call_soon')
+        self._check_not_coroutine(callback, "call_soon")
         source = GLib.Idle()
 
         source.set_priority(GLib.PRIORITY_DEFAULT)
@@ -774,11 +876,11 @@ class GLibEventLoop(GLibBaseEventLoop):
     call_soon_threadsafe = call_soon
 
     def call_later(self, delay, callback, *args, context=None):
-        self._check_not_coroutine(callback, 'call_later')
+        self._check_not_coroutine(callback, "call_later")
 
         return GLibHandle(
             loop=self,
-            source=GLib.Timeout(delay*1000) if delay > 0 else GLib.Idle(),
+            source=GLib.Timeout(delay * 1000) if delay > 0 else GLib.Idle(),
             repeat=False,
             callback=callback,
             args=args,
@@ -786,10 +888,9 @@ class GLibEventLoop(GLibBaseEventLoop):
         )
 
     def call_at(self, when, callback, *args, context=None):
-        self._check_not_coroutine(callback, 'call_at')
+        self._check_not_coroutine(callback, "call_at")
 
-        return self.call_later(
-            when - self.time(), callback, *args, context=context)
+        return self.call_later(when - self.time(), callback, *args, context=context)
 
     def time(self):
         return GLib.get_monotonic_time() / 1000000
@@ -814,7 +915,9 @@ class GLibEventLoop(GLibBaseEventLoop):
         if self._application is not None:
             raise ValueError("application is already set")
         if self.is_running():
-            raise RuntimeError("You can't add the application to a loop that's already running.")
+            raise RuntimeError(
+                "You can't add the application to a loop that's already running."
+            )
         self._application = application
         self._policy._application = application
         del self._mainloop
@@ -867,13 +970,15 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
 
     def new_event_loop(self):
         """Create a new event loop and return it."""
-        if not self._default_loop and isinstance(threading.current_thread(), threading._MainThread):
-            l = self.get_default_loop()
+        if not self._default_loop and isinstance(
+            threading.current_thread(), threading._MainThread
+        ):
+            loop = self.get_default_loop()
         else:
-            l = GLibEventLoop()
-        l._policy = self
+            loop = GLibEventLoop()
+        loop._policy = self
 
-        return l
+        return loop
 
     def get_default_loop(self):
         """Get the default event loop."""
@@ -882,6 +987,8 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         return self._default_loop
 
     def _new_default_loop(self):
-        l = GLibEventLoop(context=GLib.main_context_default(), application=self._application)
-        l._policy = self
-        return l
+        loop = GLibEventLoop(
+            context=GLib.main_context_default(), application=self._application
+        )
+        loop._policy = self
+        return loop

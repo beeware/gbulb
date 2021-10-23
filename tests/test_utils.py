@@ -2,15 +2,16 @@ from unittest import mock
 
 import pytest
 
-from utils import glib_loop
 
-
-@pytest.mark.parametrize('gtk,gtk_available', [
-    (False, False),
-    (False, True),
-    (True, False),
-    (True, True),
-])
+@pytest.mark.parametrize(
+    "gtk,gtk_available",
+    [
+        (False, False),
+        (False, True),
+        (True, False),
+        (True, True),
+    ],
+)
 def test_install(gtk, gtk_available):
     from gbulb import install
     import sys
@@ -22,19 +23,19 @@ def test_install(gtk, gtk_available):
         called = True
         cls_name = pol.__class__.__name__
         if gtk:
-            assert cls_name == 'GtkEventLoopPolicy'
+            assert cls_name == "GtkEventLoopPolicy"
         else:
-            assert cls_name == 'GLibEventLoopPolicy'
+            assert cls_name == "GLibEventLoopPolicy"
 
-    if gtk and 'gbulb.gtk' in sys.modules:
-        del sys.modules['gbulb.gtk']
+    if gtk and "gbulb.gtk" in sys.modules:
+        del sys.modules["gbulb.gtk"]
 
     mock_repository = mock.Mock()
     if not gtk_available:
         del mock_repository.Gtk
 
-    with mock.patch.dict('sys.modules', {'gi.repository': mock_repository}):
-        with mock.patch('asyncio.set_event_loop_policy', set_event_loop_policy):
+    with mock.patch.dict("sys.modules", {"gi.repository": mock_repository}):
+        with mock.patch("asyncio.set_event_loop_policy", set_event_loop_policy):
             import_error = gtk and not gtk_available
             try:
                 install(gtk=gtk)
@@ -59,24 +60,26 @@ def test_wait_signal(glib_loop):
 
     class TestObject(GObject.GObject):
         __gsignals__ = {
-            'foo': (GObject.SIGNAL_RUN_LAST, None, (str,)),
+            "foo": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         }
 
     t = TestObject()
 
     def emitter():
         yield
-        t.emit('foo', 'frozen brains tell no tales')
+        t.emit("foo", "frozen brains tell no tales")
 
     called = False
-    @asyncio.coroutine
-    def waiter():
+
+    async def waiter():
         nonlocal called
-        r = yield from wait_signal(t, 'foo', loop=glib_loop)
-        assert r == (t, 'frozen brains tell no tales')
+        r = await wait_signal(t, "foo")
+        assert r == (t, "frozen brains tell no tales")
         called = True
 
-    glib_loop.run_until_complete(asyncio.wait([waiter(), emitter()], timeout=1, loop=glib_loop))
+    glib_loop.run_until_complete(
+        asyncio.wait([waiter(), emitter()], timeout=1)
+    )
 
     assert called
 
@@ -88,22 +91,24 @@ def test_wait_signal_cancel(glib_loop):
 
     class TestObject(GObject.GObject):
         __gsignals__ = {
-            'foo': (GObject.SIGNAL_RUN_LAST, None, (str,)),
+            "foo": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         }
 
     t = TestObject()
 
     def emitter():
         yield
-        t.emit('foo', 'frozen brains tell no tales')
+        t.emit("foo", "frozen brains tell no tales")
 
     called = False
     cancelled = False
+
     def waiter():
         nonlocal cancelled
         yield
 
-        r = wait_signal(t, 'foo', loop=glib_loop)
+        r = wait_signal(t, "foo")
+
         @r.add_done_callback
         def caller(r):
             nonlocal called
@@ -113,7 +118,9 @@ def test_wait_signal_cancel(glib_loop):
         assert r.cancelled()
         cancelled = True
 
-    glib_loop.run_until_complete(asyncio.wait([waiter(), emitter()], timeout=1, loop=glib_loop))
+    glib_loop.run_until_complete(
+        asyncio.wait([waiter(), emitter()], timeout=1)
+    )
 
     assert cancelled
     assert called
@@ -121,6 +128,7 @@ def test_wait_signal_cancel(glib_loop):
 
 def test_wait_signal_cancel_state():
     from gbulb import wait_signal
-    m = wait_signal(mock.Mock(), 'anything')
+
+    m = wait_signal(mock.Mock(), "anything")
     assert m.cancel()
     assert not m.cancel()
