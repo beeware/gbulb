@@ -27,7 +27,7 @@ gbulb
 
 Gbulb is a Python library that implements a `PEP 3156
 <http://www.python.org/dev/peps/pep-3156/>`__ interface for the `GLib main event
-loop <https://developer.gnome.org/glib/stable/glib-The-Main-Event-Loop.html>
+loop <https://developer.gnome.org/glib/stable/glib-The-Main-Event-Loop.html>`__
 under UNIX-like systems.
 
 As much as possible, except where noted below, it mimics asyncio's interface.
@@ -36,7 +36,7 @@ If you notice any differences, please report them.
 Requirements
 ------------
 
-- python3.5+
+- python 3.6+
 - pygobject
 - glib
 - gtk+3 (optional)
@@ -47,6 +47,8 @@ Usage
 GLib event loop
 ~~~~~~~~~~~~~~~
 
+Example usage::
+
     import asyncio, gbulb
     gbulb.install()
     asyncio.get_event_loop().run_forever()
@@ -54,12 +56,16 @@ GLib event loop
 Gtk+ event loop *(suitable for GTK+ applications)*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Example usage::
+
     import asyncio, gbulb
     gbulb.install(gtk=True)
     asyncio.get_event_loop().run_forever()
 
 GApplication/GtkApplication event loop
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Example usage::
 
     import asyncio, gbulb
     gbulb.install(gtk=True)  # only necessary if you're using GtkApplication
@@ -101,18 +107,19 @@ The issue: given a context, GLib provides no ways to know if there is an
 existing event loop running for that context. It implies the following
 divergences with PEP 3156:
 
- - ``.run_forever()`` and ``.run_until_complete()`` are not guaranteed to run
-   immediately. If the context is owned by another thread, then they will
-   block until the context is released by the other thread.
+- ``.run_forever()`` and ``.run_until_complete()`` are not guaranteed to run
+  immediately. If the context is owned by another thread, then they will
+  block until the context is released by the other thread.
 
- - ``.stop()`` is relevant only when the currently running Glib.MainLoop object
-   was created by this asyncio object (i.e. by calling ``.run_forever()`` or
-   ``.run_until_complete()``). The event loop will quit only when it regains
-   control of the context. This can happen in two cases:
-    1. when multiple event loop are enclosed (by creating new ``MainLoop``
-       objects and calling ``.run()`` recursively)
-    2. when the event loop has not even yet started because it is still
-       trying to acquire the context
+- ``.stop()`` is relevant only when the currently running Glib.MainLoop object
+  was created by this asyncio object (i.e. by calling ``.run_forever()`` or
+  ``.run_until_complete()``). The event loop will quit only when it regains
+  control of the context. This can happen in two cases:
+
+  1. when multiple event loop are enclosed (by creating new ``MainLoop``
+     objects and calling ``.run()`` recursively)
+  2. when the event loop has not even yet started because it is still
+     trying to acquire the context
 
 It would be wiser not to use any recursion at all. ``GLibEventLoop`` will
 actually prevent you from doing that (in accordance with PEP 3156), however
