@@ -1,0 +1,1 @@
+Corrects a problem where a socket isn't forgotten and causes 100% CPU load.
