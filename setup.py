@@ -10,10 +10,10 @@ setup(
     name='gbulb',
     version='0.6.1',
     description='GLib event loop for tulip (PEP 3156)',
-    author='Nathan Hoad',
-    author_email='nathan@getoffmalawn.com',
+    author='Russell Keith-Magee',
+    author_email='russell@keith-magee.com',
     license='Apache 2.0',
-    url='http://github.com/nathan-hoad/gbulb',
+    url='http://github.com/beeware/gbulb',
     packages=['gbulb'],
     long_description="""Gbulb is a python library that implements a PEP 3156 interface for the GLib main event loop. It is designed to be used together with the tulip reference implementation.""",
     classifiers=[

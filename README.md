@@ -1,7 +1,5 @@
 # gbulb - a PEP 3156 event loop based on GLib
 
-# Please note that this project is unmaintained. If you are interested in taking ownership, please discuss on https://github.com/nathan-hoad/gbulb/issues/32
-
 [![Build Status](http://drone.getoffmalawn.com/api/badges/nathan-hoad/gbulb/status.svg)](http://drone.getoffmalawn.com/nathan-hoad/gbulb)
 
 Gbulb is a Python library that implements a [PEP 3156][PEP3156] interface for
@@ -10,15 +8,13 @@ the [GLib main event loop][glibloop] under UNIX-like systems.
 As much as possible, except where noted below, it mimics asyncio's interface.
 If you notice any differences, please report them.
 
-Nathan Hoad
-
 ## Licence
 
 Apache 2.0
 
 ## Homepage
 
-[https://github.com/nathan-hoad/gbulb](https://github.com/nathan-hoad/gbulb)
+[https://github.com/beeware/gbulb](https://github.com/beeware/gbulb)
 
 ## Requirements
 - python3.5+
