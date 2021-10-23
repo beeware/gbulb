@@ -36,9 +36,10 @@ def main():
 
     win.show_all()
 
-    asyncio.async(text_watcher(display))
-    asyncio.async(counter(display))
+    asyncio.ensure_future(text_watcher(display))
+    asyncio.ensure_future(counter(display))
     loop.run_forever()
+
 
 if __name__ == '__main__':
     main()

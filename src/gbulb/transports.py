@@ -1,12 +1,12 @@
 import collections
 import socket
 import subprocess
-from asyncio import base_subprocess, futures, transports
+from asyncio import base_subprocess, futures, transports, CancelledError
 
 
 class BaseTransport(transports.BaseTransport):
     def __init__(self, loop, sock, protocol, waiter=None, extra=None, server=None):
-        if hasattr(self, '_sock'):
+        if hasattr(self, "_sock"):
             return  # The joys of multiple inheritance
 
         transports.BaseTransport.__init__(self, extra)
@@ -30,6 +30,7 @@ class BaseTransport(transports.BaseTransport):
             self._protocol.connection_made(self)
             if waiter is not None and not waiter.cancelled():
                 waiter.set_result(None)
+
         self._loop.call_soon(transport_async_init)
 
     def close(self):
@@ -46,13 +47,15 @@ class BaseTransport(transports.BaseTransport):
     def get_protocol(self):
         return self._protocol
 
-    def _fatal_error(self, exc, message='Fatal error on pipe transport'):
-        self._loop.call_exception_handler({
-            'message': message,
-            'exception': exc,
-            'transport': self,
-            'protocol': self._protocol,
-        })
+    def _fatal_error(self, exc, message="Fatal error on pipe transport"):
+        self._loop.call_exception_handler(
+            {
+                "message": message,
+                "exception": exc,
+                "transport": self,
+                "protocol": self._protocol,
+            }
+        )
         self._force_close(exc)
 
     def _force_close(self, exc):
@@ -91,14 +94,14 @@ class ReadTransport(BaseTransport, transports.ReadTransport):
 
     def pause_reading(self):
         if self._closing:
-            raise RuntimeError('Cannot pause_reading() when closing')
+            raise RuntimeError("Cannot pause_reading() when closing")
         if self._paused:
-            raise RuntimeError('Already paused')
+            raise RuntimeError("Already paused")
         self._paused = True
 
     def resume_reading(self):
         if not self._paused:
-            raise RuntimeError('Not paused')
+            raise RuntimeError("Not paused")
         self._paused = False
         if self._closing:
             return
@@ -134,7 +137,9 @@ class ReadTransport(BaseTransport, transports.ReadTransport):
 
         try:
             if fut is not None:
-                assert self._read_fut is fut or (self._read_fut is None and self._closing)
+                assert self._read_fut is fut or (
+                    self._read_fut is None and self._closing
+                )
                 if self._read_fut in self._cancelable:
                     self._cancelable.remove(self._read_fut)
                 self._read_fut = None
@@ -145,7 +150,7 @@ class ReadTransport(BaseTransport, transports.ReadTransport):
                 data = None
                 return
 
-            if data == b'':
+            if data == b"":
                 # No need to reschedule on end-of-file
                 return
 
@@ -154,12 +159,12 @@ class ReadTransport(BaseTransport, transports.ReadTransport):
             self._cancelable.add(self._read_fut)
         except ConnectionAbortedError as exc:
             if not self._closing:
-                self._fatal_error(exc, 'Fatal read error on pipe transport')
+                self._fatal_error(exc, "Fatal read error on pipe transport")
         except ConnectionResetError as exc:
             self._force_close(exc)
         except OSError as exc:
-            self._fatal_error(exc, 'Fatal read error on pipe transport')
-        except futures.CancelledError:
+            self._fatal_error(exc, "Fatal read error on pipe transport")
+        except CancelledError:
             if not self._closing:
                 raise
         except futures.InvalidStateError:
@@ -200,6 +205,7 @@ class WriteTransport(BaseTransport, transports._FlowControlMixin):
             def transport_write_done_callback():
                 self._closing_delayed = False
                 self.close()
+
             self._buffer_empty_callbacks.add(transport_write_done_callback)
 
     def close(self):
@@ -209,7 +215,7 @@ class WriteTransport(BaseTransport, transports._FlowControlMixin):
 
     def write(self, data):
         if self._eof_written:
-            raise RuntimeError('write_eof() already called')
+            raise RuntimeError("write_eof() already called")
 
         # Ignore empty data sets or requests to write to a dying connection
         if not data or self._closing:
@@ -268,7 +274,7 @@ class WriteTransport(BaseTransport, transports._FlowControlMixin):
         except ConnectionResetError as exc:
             self._force_close(exc)
         except OSError as exc:
-            self._fatal_error(exc, 'Fatal write error on pipe transport')
+            self._fatal_error(exc, "Fatal write error on pipe transport")
 
     def write_eof(self):
         self.close()
@@ -280,15 +286,15 @@ class Transport(ReadTransport, WriteTransport):
         WriteTransport.__init__(self, *args, **kwargs)
 
         # Set expected extra attributes (available through `.get_extra_info()`)
-        self._extra['socket'] = self._sock
+        self._extra["socket"] = self._sock
         try:
-            self._extra['sockname'] = self._sock.getsockname()
+            self._extra["sockname"] = self._sock.getsockname()
         except (OSError, AttributeError):
             pass
-        if 'peername' not in self._extra:
+        if "peername" not in self._extra:
             try:
-                self._extra['peername'] = self._sock.getpeername()
-            except (OSError, AttributeError) as error:
+                self._extra["peername"] = self._sock.getpeername()
+            except (OSError, AttributeError):
                 pass
 
     def close(self):
@@ -311,9 +317,11 @@ class SocketTransport(Transport):
         if self._write_fut is None:
             self._sock.shutdown(socket.SHUT_WR)
         else:
+
             def transport_write_eof_callback():
                 if not self._closing:
                     self._sock.shutdown(socket.SHUT_WR)
+
             self._buffer_empty_callbacks.add(transport_write_eof_callback)
 
 
@@ -323,7 +331,6 @@ class DatagramTransport(Transport, transports.DatagramTransport):
     def __init__(self, loop, sock, protocol, address=None, *args, **kwargs):
         self._address = address
         super().__init__(loop, sock, protocol, *args, **kwargs)
-
 
     def _create_read_future(self, size):
         return self._loop.sock_recvfrom(self._sock, size)
@@ -354,17 +361,22 @@ class DatagramTransport(Transport, transports.DatagramTransport):
 
     def write(self, data, addr=None):
         if not isinstance(data, (bytes, bytearray, memoryview)):
-            raise TypeError("data argument must be a bytes-like object, "
-                            "not {!r}".format(type(data).__name__))
+            raise TypeError(
+                "data argument must be a bytes-like object, "
+                "not {!r}".format(type(data).__name__)
+            )
 
         if not data or self.is_closing():
             return
 
         if self._address and addr not in (None, self._address):
-            raise ValueError("Invalid address: must be None or {0}".format(self._address))
+            raise ValueError(
+                "Invalid address: must be None or {0}".format(self._address)
+            )
 
         # Do not copy the data yet, as we might be able to send it synchronously
         super().write((data, addr))
+
     sendto = write
 
 
@@ -403,5 +415,11 @@ class PipeWriteTransport(WriteTransport):
 class SubprocessTransport(base_subprocess.BaseSubprocessTransport):
     def _start(self, args, shell, stdin, stdout, stderr, bufsize, **kwargs):
         self._proc = subprocess.Popen(
-            args, shell=shell, stdin=stdin, stdout=stdout, stderr=stderr,
-            bufsize=bufsize, **kwargs)
+            args,
+            shell=shell,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            bufsize=bufsize,
+            **kwargs
+        )

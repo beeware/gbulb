@@ -1,7 +1,7 @@
 import asyncio
 import weakref
 
-__all__ = ['install', 'get_event_loop', 'wait_signal']
+__all__ = ["install", "get_event_loop", "wait_signal"]
 
 
 def install(gtk=False):
@@ -20,15 +20,18 @@ def install(gtk=False):
 
     if gtk:
         from .gtk import GtkEventLoopPolicy
+
         policy = GtkEventLoopPolicy()
     else:
         from .glib_events import GLibEventLoopPolicy
+
         policy = GLibEventLoopPolicy()
 
     # There are some libraries that use SafeChildWatcher directly (which is
     # completely reasonable), so we have to ensure that it is our version. I'm
     # sorry, I know this isn't great but it's basically the best that we have.
     from .glib_events import GLibChildWatcher
+
     asyncio.SafeChildWatcher = GLibChildWatcher
     asyncio.set_event_loop_policy(policy)
 
