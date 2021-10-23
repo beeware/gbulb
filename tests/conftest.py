@@ -29,7 +29,7 @@ def gtk_policy():
     return GtkEventLoopPolicy()
 
 
-@pytest.yield_fixture(scope="function")
+@pytest.fixture(scope="function")
 def glib_loop(glib_policy):
     loop = glib_policy.new_event_loop()
     setup_test_loop(loop)
@@ -38,7 +38,7 @@ def glib_loop(glib_policy):
     loop.close()
 
 
-@pytest.yield_fixture(scope="function")
+@pytest.fixture(scope="function")
 def gtk_loop(gtk_policy):
     loop = gtk_policy.new_event_loop()
     setup_test_loop(loop)

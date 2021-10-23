@@ -60,7 +60,7 @@ def test_wait_signal(glib_loop):
 
     class TestObject(GObject.GObject):
         __gsignals__ = {
-            "foo": (GObject.SIGNAL_RUN_LAST, None, (str,)),
+            "foo": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         }
 
     t = TestObject()
@@ -71,15 +71,14 @@ def test_wait_signal(glib_loop):
 
     called = False
 
-    @asyncio.coroutine
-    def waiter():
+    async def waiter():
         nonlocal called
-        r = yield from wait_signal(t, "foo", loop=glib_loop)
+        r = await wait_signal(t, "foo")
         assert r == (t, "frozen brains tell no tales")
         called = True
 
     glib_loop.run_until_complete(
-        asyncio.wait([waiter(), emitter()], timeout=1, loop=glib_loop)
+        asyncio.wait([waiter(), emitter()], timeout=1)
     )
 
     assert called
@@ -92,7 +91,7 @@ def test_wait_signal_cancel(glib_loop):
 
     class TestObject(GObject.GObject):
         __gsignals__ = {
-            "foo": (GObject.SIGNAL_RUN_LAST, None, (str,)),
+            "foo": (GObject.SignalFlags.RUN_LAST, None, (str,)),
         }
 
     t = TestObject()
@@ -108,7 +107,7 @@ def test_wait_signal_cancel(glib_loop):
         nonlocal cancelled
         yield
 
-        r = wait_signal(t, "foo", loop=glib_loop)
+        r = wait_signal(t, "foo")
 
         @r.add_done_callback
         def caller(r):
@@ -120,7 +119,7 @@ def test_wait_signal_cancel(glib_loop):
         cancelled = True
 
     glib_loop.run_until_complete(
-        asyncio.wait([waiter(), emitter()], timeout=1, loop=glib_loop)
+        asyncio.wait([waiter(), emitter()], timeout=1)
     )
 
     assert cancelled
