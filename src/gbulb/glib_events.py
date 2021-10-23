@@ -10,9 +10,9 @@ import weakref
 from asyncio import constants, events, sslproto, tasks, CancelledError
 
 try:
-    from gi.repository import Glib, Gio
+    from gi.repository import GLib, Gio
 except ImportError:  # pragma: no cover
-    Glib = None
+    GLib = None
     Gio = None
 
 
