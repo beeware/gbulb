@@ -3,6 +3,25 @@ Change Log
 
 .. towncrier release notes start
 
+0.6.2 (2021-10-24)
+------------------
+
+Features
+^^^^^^^^
+
+* Added support for Python 3.10. (`#50 <https://github.com/beeware/gbulb/issues/50>`_)
+
+Bugfixes
+^^^^^^^^
+
+* Corrects a problem where a socket isn't forgotten and causes 100% CPU load. (`#47 <https://github.com/beeware/gbulb/issues/47>`_)
+
+Improved Documentation
+^^^^^^^^^^^^^^^^^^^^^^
+
+* (`#49 <https://github.com/beeware/gbulb/issues/49>`_)
+
+
 0.6.1 (2018-08-09)
 ------------------
 
