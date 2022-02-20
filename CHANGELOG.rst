@@ -11,6 +11,8 @@ Bugfixes
 
 * Corrected the import of ``InvalidStateError`` to fix an error seen on Python 3.8+. (`#56 <https://github.com/beeware/gbulb/issues/56>`__)
 
+* Reverted the fix from #47; that change led to file descriptor leaks. (`#52 <https://github.com/beeware/gbulb/issues/52>`_)
+
 
 0.6.2 (2021-10-24)
 ------------------

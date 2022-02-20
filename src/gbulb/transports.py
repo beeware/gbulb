@@ -75,7 +75,7 @@ class BaseTransport(transports.BaseTransport):
             self._protocol.connection_lost(exc)
         finally:
             if self._sock is not None:
-                self._sock.detach()
+                self._sock.close()
                 self._sock = None
             if self._server is not None:
                 self._server._detach()
