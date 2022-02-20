@@ -13,4 +13,4 @@ from .utils import *  # noqa: F401,F403
 # __version__ = '1.2.3'       # Final Release
 # __version__ = '1.2.3.post1' # Post Release 1
 
-__version__ = "0.6.2"
+__version__ = "0.6.3"
