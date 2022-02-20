@@ -3,6 +3,15 @@ Change Log
 
 .. towncrier release notes start
 
+0.6.3 (2022-02-20)
+------------------
+
+Bugfixes
+^^^^^^^^
+
+* Corrected the import of ``InvalidStateError`` to fix an error seen on Python 3.8+. (`#56 <https://github.com/beeware/gbulb/issues/56>`__)
+
+
 0.6.2 (2021-10-24)
 ------------------
 
