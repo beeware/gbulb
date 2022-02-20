@@ -11,7 +11,7 @@ Bugfixes
 
 * Corrected the import of ``InvalidStateError`` to fix an error seen on Python 3.8+. (`#56 <https://github.com/beeware/gbulb/issues/56>`__)
 
-* Reverted the fix from #47; that change led to file descriptor leaks. (`#52 <https://github.com/beeware/gbulb/issues/52>`_)
+* Reverted the fix from #47; that change led to file descriptor leaks. (`#52 <https://github.com/beeware/gbulb/issues/52>`__)
 
 
 0.6.2 (2021-10-24)
@@ -20,17 +20,17 @@ Bugfixes
 Features
 ^^^^^^^^
 
-* Added support for Python 3.10. (`#50 <https://github.com/beeware/gbulb/issues/50>`_)
+* Added support for Python 3.10. (`#50 <https://github.com/beeware/gbulb/issues/50>`__)
 
 Bugfixes
 ^^^^^^^^
 
-* Corrects a problem where a socket isn't forgotten and causes 100% CPU load. (`#47 <https://github.com/beeware/gbulb/issues/47>`_)
+* Corrects a problem where a socket isn't forgotten and causes 100% CPU load. (`#47 <https://github.com/beeware/gbulb/issues/47>`__)
 
 Improved Documentation
 ^^^^^^^^^^^^^^^^^^^^^^
 
-* (`#49 <https://github.com/beeware/gbulb/issues/49>`_)
+* (`#49 <https://github.com/beeware/gbulb/issues/49>`__)
 
 
 0.6.1 (2018-08-09)
