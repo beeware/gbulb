@@ -1,0 +1,1 @@
+Corrected the import of ``InvalidStateError`` to fix an error seen on Python 3.8+.
