@@ -1,6 +1,6 @@
 import threading
 
-from gi.repository import GLib, Gtk
+from gi.repository import Gtk
 
 from .glib_events import GLibEventLoop, GLibEventLoopPolicy
 
@@ -17,7 +17,6 @@ class GtkEventLoop(GLibEventLoop):
     def __init__(self, **kwargs):
         self._recursive = 0
         self._recurselock = threading.Lock()
-        kwargs["context"] = GLib.main_context_default()
 
         super().__init__(**kwargs)
 
@@ -55,15 +54,4 @@ class GtkEventLoop(GLibEventLoop):
 class GtkEventLoopPolicy(GLibEventLoopPolicy):
     """Gtk-based event loop policy. Use this if you are using Gtk."""
 
-    def _new_default_loop(self):
-        loop = GtkEventLoop(application=self._application)
-        loop._policy = self
-        return loop
-
-    def new_event_loop(self):
-        if not self._default_loop:
-            loop = self.get_default_loop()
-        else:
-            loop = GtkEventLoop()
-        loop._policy = self
-        return loop
+    EventLoopCls = GtkEventLoop
