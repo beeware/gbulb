@@ -647,6 +647,14 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
 
         return self._channel_read(channel, nbytes, read_func)
 
+    def sock_recv_into(self, sock, buf, flags=0):
+        channel = self._channel_from_socket(sock)
+
+        def read_func(channel, nbytes):
+            return sock.recv_into(buf, flags)
+
+        return self._channel_read(channel, len(buf), read_func)
+
     def sock_recvfrom(self, sock, nbytes, flags=0):
         channel = self._channel_from_socket(sock)
 
