@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-from gi.repository import Gtk
 import asyncio
+
+from gi.repository import Gtk
+
 import gbulb
 import gbulb.gtk
 
 
 class ProgressBarWindow(Gtk.Window):
-
     def __init__(self):
         Gtk.Window.__init__(self, title="ProgressBar Demo")
         self.set_border_width(10)
