@@ -1,7 +1,7 @@
 import collections
 import socket
 import subprocess
-from asyncio import base_subprocess, transports, CancelledError, InvalidStateError
+from asyncio import CancelledError, InvalidStateError, base_subprocess, transports
 
 
 class BaseTransport(transports.BaseTransport):
@@ -370,9 +370,7 @@ class DatagramTransport(Transport, transports.DatagramTransport):
             return
 
         if self._address and addr not in (None, self._address):
-            raise ValueError(
-                "Invalid address: must be None or {0}".format(self._address)
-            )
+            raise ValueError(f"Invalid address: must be None or {self._address}")
 
         # Do not copy the data yet, as we might be able to send it synchronously
         super().write((data, addr))
@@ -421,5 +419,5 @@ class SubprocessTransport(base_subprocess.BaseSubprocessTransport):
             stdout=stdout,
             stderr=stderr,
             bufsize=bufsize,
-            **kwargs
+            **kwargs,
         )

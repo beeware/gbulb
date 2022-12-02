@@ -1,9 +1,8 @@
 import asyncio
 import sys
+from unittest import mock, skipIf
 
 import pytest
-
-from unittest import mock, skipIf
 from gi.repository import Gio, GLib
 
 is_windows = sys.platform == "win32"
@@ -111,7 +110,7 @@ class TestBaseGLibEventLoop:
         assert not glib_loop.remove_signal_handler(signal.SIGHUP)
 
     @skipIf(is_windows, "Unix signal handlers are not supported on Windows")
-    @pytest.mark.filterwarnings('ignore:g_unix_signal_source_new')
+    @pytest.mark.filterwarnings("ignore:g_unix_signal_source_new")
     def test_remove_signal_handler_sigkill(self, glib_loop):
         import signal
 
@@ -119,7 +118,7 @@ class TestBaseGLibEventLoop:
             glib_loop.add_signal_handler(signal.SIGKILL, None)
 
     @skipIf(is_windows, "Unix signal handlers are not supported on Windows")
-    @pytest.mark.filterwarnings('ignore:g_unix_signal_source_new')
+    @pytest.mark.filterwarnings("ignore:g_unix_signal_source_new")
     def test_remove_signal_handler_sigill(self, glib_loop):
         import signal
 

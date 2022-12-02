@@ -1,8 +1,8 @@
 import asyncio
 
-import gbulb
-
 from gi.repository import Gtk
+
+import gbulb
 
 
 @asyncio.coroutine
@@ -10,7 +10,7 @@ def counter(label):
     i = 0
     while True:
         label.set_text(str(i))
-        print('incrementing', i)
+        print("incrementing", i)
         yield from asyncio.sleep(1)
         i += 1
 
@@ -24,8 +24,8 @@ def main():
 
     vbox.pack_start(display, True, True, 0)
 
-    win = Gtk.Window(title='Counter window')
-    win.connect('delete-event', lambda *args: loop.stop())
+    win = Gtk.Window(title="Counter window")
+    win.connect("delete-event", lambda *args: loop.stop())
     win.add(vbox)
 
     win.show_all()
@@ -34,5 +34,5 @@ def main():
     loop.run_forever()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

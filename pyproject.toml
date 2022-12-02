@@ -5,12 +5,17 @@ requires = [
 ]
 build-backend = "setuptools.build_meta"
 
+[tool.isort]
+profile = "black"
+skip_glob = [
+    "venv*",
+    "local",
+]
+multi_line_output = 3
+
 [tool.towncrier]
 directory = "changes"
 package = "gbulb"
 package_dir = "src"
 filename = "CHANGELOG.rst"
-title_format = "{version} ({project_date})"
-issue_format = "`#{issue} <https://github.com/beeware/gbulb/issues/{issue}>`__"
 template = "changes/template.rst"
-underlines = ["-", "^", "\""]
