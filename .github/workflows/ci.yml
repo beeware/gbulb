@@ -9,45 +9,63 @@ jobs:
   pre-commit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v3.1.0
       - uses: actions/setup-python@v4.3.0
         with:
           python-version: ${{ env.min_python_version }}
       - uses: pre-commit/action@v3.0.0
 
-  beefore:
-    name: Pre-test checks
+  towncrier:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        task:
-        - "towncrier-check"
-        - "package"
     steps:
-    - uses: actions/checkout@v3
+    # Fetch main branch for comparison, then check out current branch.
+    - uses: actions/checkout@v3.1.0
+      with:
+        fetch-depth: 0
+        ref: main
+    - uses: actions/checkout@v3.1.0
+      with:
+        fetch-depth: 0
     - name: Set up Python 3.X
       uses: actions/setup-python@v4.3.0
       with:
         python-version: "3.X"
     - name: Install dependencies
       run: |
-        sudo apt-get install -y python3-dev python3-gi gir1.2-gtk-3.0 libgirepository1.0-dev pkg-config
+        pip install tox
+    - name: Run Towncrier
+      run: |
+        tox -e towncrier-check
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3.1.0
+      with:
+        fetch-depth: 0
+    - name: Set up Python 3.X
+      uses: actions/setup-python@v4.3.0
+      with:
+        python-version: "3.X"
+    - name: Install dependencies
+      run: |
         pip install tox
     - name: Run pre-test check
       run: |
-        tox -e ${{ matrix.task }}
+        tox -e package
 
   python-versions:
     name: Python compatibility test
     needs:
     - pre-commit
-    - beefore
+    - towncrier
+    - package
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["3.7", "3.8", "3.9", "3.10", "3.11", "3.12-dev"]
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v3.1.0
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4.3.0
       with:
