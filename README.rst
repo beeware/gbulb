@@ -36,7 +36,7 @@ If you notice any differences, please report them.
 Requirements
 ------------
 
-- python 3.6+
+- python 3.7+
 - pygobject
 - glib
 - gtk+3 (optional)
@@ -130,7 +130,7 @@ calling GLib's primitives.
 Community
 ---------
 
-gblub is part of the `BeeWare suite`_. You can talk to the community through:
+gbulb is part of the `BeeWare suite`_. You can talk to the community through:
 
 * `@pybeeware on Twitter <https://twitter.com/pybeeware>`__
 

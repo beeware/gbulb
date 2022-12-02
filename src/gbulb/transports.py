@@ -3,7 +3,7 @@ import collections
 import io
 import socket
 import subprocess
-from asyncio import base_subprocess, transports, CancelledError, InvalidStateError
+from asyncio import CancelledError, InvalidStateError, base_subprocess, transports
 
 
 class BaseTransport(transports.BaseTransport):
@@ -391,9 +391,7 @@ class DatagramTransport(Transport, transports.DatagramTransport):
             return
 
         if self._address and addr not in (None, self._address):
-            raise ValueError(
-                "Invalid address: must be None or {0}".format(self._address)
-            )
+            raise ValueError(f"Invalid address: must be None or {self._address}")
 
         # Do not copy the data yet, as we might be able to send it synchronously
         super().write((data, addr))
@@ -417,10 +415,10 @@ class PipeReadTransport(ReadTransport):
         assert isinstance(data, bytes)
         if data != b"" and data != 0:
             if self._alloc_read_buffers:
-                #FIXME: GLib does not actually expose the equivalent to
+                # FIXME: GLib does not actually expose the equivalent to
                 #       `recv_into` in its channel interface, so we have to
                 #       add an extra copy here rather than avoiding one
-                self._read_buffer[0:len(data)] = data
+                self._read_buffer[0 : len(data)] = data
                 self._protocol.buffer_updated(len(data))
                 self._read_buffer = None
             else:
@@ -463,5 +461,5 @@ class SubprocessTransport(base_subprocess.BaseSubprocessTransport):
             stdout=stdout,
             stderr=stderr,
             bufsize=bufsize,
-            **kwargs
+            **kwargs,
         )

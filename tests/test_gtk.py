@@ -2,7 +2,8 @@ import pytest
 
 try:
     import gi
-    gi.require_version('Gtk', '3.0')
+
+    gi.require_version("Gtk", "3.0")
 
     from gi.repository import Gtk
 except ImportError:  # pragma: no cover
@@ -39,12 +40,12 @@ class TestGtkEventLoopPolicy:
             loop_count += 1
 
             if loop_count == 10:
-                print("loop {} stopped".format(i))
+                print(f"loop {i} stopped")
                 gtk_loop.stop()
             else:
                 gtk_loop.call_soon(inner)
                 gtk_loop.run()
-                print("loop {} stopped".format(i))
+                print(f"loop {i} stopped")
                 gtk_loop.stop()
 
         gtk_loop.call_soon(inner)

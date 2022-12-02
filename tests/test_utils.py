@@ -13,8 +13,9 @@ import pytest
     ],
 )
 def test_install(gtk, gtk_available):
-    from gbulb import install
     import sys
+
+    from gbulb import install
 
     called = False
 
@@ -48,6 +49,7 @@ def test_install(gtk, gtk_available):
 
 def test_get_event_loop():
     import asyncio
+
     import gbulb
 
     assert asyncio.get_event_loop() is gbulb.get_event_loop()
@@ -55,7 +57,9 @@ def test_get_event_loop():
 
 def test_wait_signal(glib_loop):
     import asyncio
+
     from gi.repository import GObject
+
     from gbulb import wait_signal
 
     class TestObject(GObject.GObject):
@@ -77,16 +81,16 @@ def test_wait_signal(glib_loop):
         assert r == (t, "frozen brains tell no tales")
         called = True
 
-    glib_loop.run_until_complete(
-        asyncio.wait([waiter(), emitter()], timeout=1)
-    )
+    glib_loop.run_until_complete(asyncio.wait([waiter(), emitter()], timeout=1))
 
     assert called
 
 
 def test_wait_signal_cancel(glib_loop):
     import asyncio
+
     from gi.repository import GObject
+
     from gbulb import wait_signal
 
     class TestObject(GObject.GObject):
@@ -118,9 +122,7 @@ def test_wait_signal_cancel(glib_loop):
         assert r.cancelled()
         cancelled = True
 
-    glib_loop.run_until_complete(
-        asyncio.wait([waiter(), emitter()], timeout=1)
-    )
+    glib_loop.run_until_complete(asyncio.wait([waiter(), emitter()], timeout=1))
 
     assert cancelled
     assert called

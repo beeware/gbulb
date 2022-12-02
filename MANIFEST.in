@@ -4,6 +4,7 @@ include CHANGELOG.rst
 include LICENSE
 include README.rst
 include tox.ini
+include .pre-commit-config.yaml
 recursive-include changes *.rst
 recursive-include examples *
 recursive-exclude examples *.pyc *.pyo

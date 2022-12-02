@@ -1,4 +1,4 @@
-"""PEP 3156 event loop based on GLib"""
+"""PEP 3156 event loop based on GLib."""
 
 import asyncio
 import os
@@ -7,10 +7,10 @@ import socket
 import sys
 import threading
 import weakref
-from asyncio import constants, events, sslproto, tasks, CancelledError
+from asyncio import CancelledError, constants, events, sslproto, tasks
 
 try:
-    from gi.repository import GLib, Gio
+    from gi.repository import Gio, GLib
 except ImportError:  # pragma: no cover
     GLib = None
     Gio = None
@@ -18,18 +18,15 @@ except ImportError:  # pragma: no cover
 
 from . import transports
 
-
 if hasattr(os, "set_blocking"):
 
     def _set_nonblocking(fd):
         os.set_blocking(fd, False)
 
-
 elif sys.platform == "win32":
 
     def _set_nonblocking(fd):
         pass
-
 
 else:
     import fcntl
@@ -50,7 +47,6 @@ if sys.platform == "win32":
     class AbstractChildWatcher:
         pass
 
-
 else:
     from asyncio.unix_events import AbstractChildWatcher
 
@@ -63,6 +59,7 @@ class GLibChildWatcher(AbstractChildWatcher):
     # On windows on has to open a process handle for the given PID number
     # before it's possible to use GLib's `child_watch_add` on it
     if sys.platform == "win32":
+
         def _create_handle_for_pid(self, pid):
             import _winapi
 
@@ -74,6 +71,7 @@ class GLibChildWatcher(AbstractChildWatcher):
             _winapi.CloseHandle(handle)
 
     else:
+
         def _create_handle_for_pid(self, pid):
             return pid
 
@@ -185,17 +183,16 @@ if sys.platform == "win32":
         def close(self):
             pass
 
-
 else:
     from asyncio import unix_events
 
     class GLibBaseEventLoopPlatformExt(unix_events.SelectorEventLoop):
-        """
-        Semi-hack that allows us to leverage the existing implementation of Unix domain sockets
-        without having to actually implement a selector based event loop.
+        """Semi-hack that allows us to leverage the existing implementation of
+        Unix domain sockets without having to actually implement a selector
+        based event loop.
 
-        Note that both `__init__` and `close` DO NOT and SHOULD NOT ever call their parent
-        implementation!
+        Note that both `__init__` and `close` DO NOT and SHOULD NOT ever
+        call their parent implementation!
         """
 
         def __init__(self):
@@ -233,16 +230,19 @@ else:
 
 
 class _BaseEventLoop(asyncio.BaseEventLoop):
-    """
-    Extra inheritance step that needs to be inserted so that we only ever indirectly inherit from
-    `asyncio.BaseEventLoop`. This is necessary as the Unix implementation will also indirectly
+    """Extra inheritance step that needs to be inserted so that we only ever
+    indirectly inherit from `asyncio.BaseEventLoop`.
+
+    This is necessary as the Unix implementation will also indirectly
     inherit from that class (thereby creating diamond inheritance).
-    Python permits and fully supports diamond inheritance so this is not a problem. However it
-    is, on the other hand, not permitted to inherit from a class both directly *and* indirectly –
-    hence we add this intermediate class to make sure that can never happen (see
-    https://stackoverflow.com/q/29214888 for a minimal example a forbidden inheritance tree) and
-    https://www.python.org/download/releases/2.3/mro/ for some extensive documentation of the
-    allowed inheritance structures in python.
+    Python permits and fully supports diamond inheritance so this is not
+    a problem. However it is, on the other hand, not permitted to
+    inherit from a class both directly *and* indirectly – hence we add
+    this intermediate class to make sure that can never happen (see
+    https://stackoverflow.com/q/29214888 for a minimal example a
+    forbidden inheritance tree) and
+    https://www.python.org/download/releases/2.3/mro/ for some extensive
+    documentation of the allowed inheritance structures in python.
     """
 
 
@@ -316,7 +316,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         server_hostname=None,
         extra=None,
         server=None,
-        ssl_handshake_timeout=None
+        ssl_handshake_timeout=None,
     ):
         """Create SSL transport."""
         # sslproto._is_sslproto_available was removed from asyncio, starting from Python 3.7.
@@ -341,7 +341,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
             waiter,
             server_side,
             server_hostname,
-            **extra_protocol_kwargs
+            **extra_protocol_kwargs,
         )
         transports.SocketTransport(
             self, rawsock, ssl_protocol, extra=extra, server=server
@@ -376,7 +376,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         stderr,
         bufsize,
         extra=None,
-        **kwargs
+        **kwargs,
     ):
         """Create subprocess transport."""
         with events.get_child_watcher() as watcher:
@@ -392,7 +392,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
                 bufsize,
                 waiter=waiter,
                 extra=extra,
-                **kwargs
+                **kwargs,
             )
 
             watcher.add_child_handler(
@@ -482,12 +482,14 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         from asyncio import coroutines
 
         if coroutines.iscoroutine(callback) or coroutines.iscoroutinefunction(callback):
-            raise TypeError("coroutines cannot be used with {}()".format(name))
+            raise TypeError(f"coroutines cannot be used with {name}()")
 
     def _ensure_fd_no_transport(self, fd):
         """Ensure that the given file descriptor is NOT used by any transport.
 
-        Adding another reader to a fd that is already being waited for causes a hang on Windows."""
+        Adding another reader to a fd that is already being waited for
+        causes a hang on Windows.
+        """
         try:
             transport = self._transports[fd]
         except KeyError:
@@ -530,7 +532,8 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
     def _channel_from_fileobj(self, fileobj):
         """Create GLib IOChannel for the given file object.
 
-        On windows this will only work for files and pipes returned GLib's C library.
+        On windows this will only work for files and pipes returned
+        GLib's C library.
         """
         fd = self._fileobj_to_fd(fileobj)
 
@@ -556,14 +559,14 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
             try:
                 fd = int(fileobj.fileno())
             except (AttributeError, TypeError, ValueError):
-                raise ValueError("Invalid file object: {!r}".format(fileobj))
+                raise ValueError(f"Invalid file object: {fileobj!r}")
         if fd < 0:
-            raise ValueError("Invalid file descriptor: {}".format(fd))
+            raise ValueError(f"Invalid file descriptor: {fd}")
         return fd
 
     def _delayed(self, source, callback=None, *args):
-        """Create a future that will complete after the given GLib Source object has become ready
-        and the data it tracks has been processed."""
+        """Create a future that will complete after the given GLib Source
+        object has become ready and the data it tracks has been processed."""
         future = None
 
         def handle_ready(*args):
@@ -590,14 +593,13 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         return future
 
     def _socket_handle_errors(self, sock):
-        """Raise exceptions for error states (SOL_ERROR) on the given socket object."""
+        """Raise exceptions for error states (SOL_ERROR) on the given socket
+        object."""
         errno = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
         if errno != 0:
             if sys.platform == "win32":
-                msg = socket.errorTab.get(errno, "Error {0}".format(errno))
-                raise OSError(
-                    errno, "[WinError {0}] {1}".format(errno, msg), None, errno
-                )
+                msg = socket.errorTab.get(errno, f"Error {errno}")
+                raise OSError(errno, f"[WinError {errno}] {msg}", None, errno)
             else:
                 raise OSError(errno, os.strerror(errno))
 
@@ -631,7 +633,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         async def accept_coro(future, conn):
             # Coroutine closing the accept socket if the future is cancelled
             try:
-                return (await future)
+                return await future
             except CancelledError:
                 sock.close()
                 raise
@@ -684,6 +686,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
     #####################################
     def _channel_read(self, channel, nbytes, read_func=None):
         if read_func is None:
+
             def read_func(channel, nbytes):
                 return channel.read(nbytes)
 
@@ -936,15 +939,15 @@ class GLibEventLoop(GLibBaseEventLoop):
 
 
 class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
-    """Default GLib event loop policy
+    """Default GLib event loop policy.
 
-    In this policy, each thread has its own event loop.  However, we only
-    automatically create an event loop by default for the main thread; other
-    threads by default have no event loop.
+    In this policy, each thread has its own event loop.  However, we
+    only automatically create an event loop by default for the main
+    thread; other threads by default have no event loop.
     """
 
     # TODO add a parameter to synchronise with GLib's thread default contexts
-    #   (g_main_context_push_thread_default())
+    # (i.e., g_main_context_push_thread_default())
     def __init__(self, application=None):
         self._default_loop = None
         self._application = application
@@ -966,8 +969,8 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
     def set_child_watcher(self, watcher):
         """Set a child watcher.
 
-        Must be an an instance of GLibChildWatcher, as it ties in with GLib
-        appropriately.
+        Must be an an instance of GLibChildWatcher, as it ties in with
+        GLib appropriately.
         """
 
         if watcher is not None and not isinstance(watcher, GLibChildWatcher):
