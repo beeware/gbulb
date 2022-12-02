@@ -39,7 +39,9 @@ jobs:
 
   python-versions:
     name: Python compatibility test
-    needs: smoke
+    needs:
+    - pre-commit
+    - beefore
     runs-on: ubuntu-latest
     strategy:
       matrix:
