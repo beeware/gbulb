@@ -10,8 +10,8 @@ __all__ = ["GtkEventLoop", "GtkEventLoopPolicy"]
 class GtkEventLoop(GLibEventLoop):
     """Gtk-based event loop.
 
-    This loop supports recursion in Gtk, for example for implementing modal
-    windows.
+    This loop supports recursion in Gtk, for example for implementing
+    modal windows.
     """
 
     def __init__(self, **kwargs):
@@ -24,8 +24,8 @@ class GtkEventLoop(GLibEventLoop):
         """Run the event loop until Gtk.main_quit is called.
 
         May be called multiple times to recursively start it again. This
-        is useful for implementing asynchronous-like dialogs in code that
-        is otherwise not asynchronous, for example modal dialogs.
+        is useful for implementing asynchronous-like dialogs in code
+        that is otherwise not asynchronous, for example modal dialogs.
         """
         if self.is_running():
             with self._recurselock:
@@ -41,7 +41,8 @@ class GtkEventLoop(GLibEventLoop):
     def stop(self):
         """Stop the inner-most event loop.
 
-        If it's also the outer-most event loop, the event loop will stop.
+        If it's also the outer-most event loop, the event loop will
+        stop.
         """
         with self._recurselock:
             r = self._recursive
@@ -52,6 +53,9 @@ class GtkEventLoop(GLibEventLoop):
 
 
 class GtkEventLoopPolicy(GLibEventLoopPolicy):
-    """Gtk-based event loop policy. Use this if you are using Gtk."""
+    """Gtk-based event loop policy.
+
+    Use this if you are using Gtk.
+    """
 
     EventLoopCls = GtkEventLoop
