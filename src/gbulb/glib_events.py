@@ -944,6 +944,8 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
     thread; other threads by default have no event loop.
     """
 
+    EventLoopCls = GLibEventLoop
+
     # TODO add a parameter to synchronise with GLib's thread default contexts
     # (i.e., g_main_context_push_thread_default())
     def __init__(self, application=None):
@@ -979,12 +981,13 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
 
     def new_event_loop(self):
         """Create a new event loop and return it."""
-        if not self._default_loop and isinstance(
-            threading.current_thread(), threading._MainThread
+        if (
+            not self._default_loop
+            and threading.main_thread().ident == threading.get_ident()
         ):
             loop = self.get_default_loop()
         else:
-            loop = GLibEventLoop()
+            loop = self.EventLoopCls()
         loop._policy = self
 
         return loop
@@ -996,7 +999,7 @@ class GLibEventLoopPolicy(events.AbstractEventLoopPolicy):
         return self._default_loop
 
     def _new_default_loop(self):
-        loop = GLibEventLoop(
+        loop = self.EventLoopCls(
             context=GLib.main_context_default(), application=self._application
         )
         loop._policy = self
