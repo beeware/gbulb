@@ -81,7 +81,15 @@ def test_wait_signal(glib_loop):
         assert r == (t, "frozen brains tell no tales")
         called = True
 
-    glib_loop.run_until_complete(asyncio.wait([waiter(), emitter()], timeout=1))
+    glib_loop.run_until_complete(
+        asyncio.wait(
+            [
+                glib_loop.create_task(waiter()),
+                glib_loop.create_task(emitter()),
+            ],
+            timeout=1,
+        )
+    )
 
     assert called
 
@@ -122,7 +130,15 @@ def test_wait_signal_cancel(glib_loop):
         assert r.cancelled()
         cancelled = True
 
-    glib_loop.run_until_complete(asyncio.wait([waiter(), emitter()], timeout=1))
+    glib_loop.run_until_complete(
+        asyncio.wait(
+            [
+                glib_loop.create_task(waiter()),
+                glib_loop.create_task(emitter()),
+            ],
+            timeout=1,
+        )
+    )
 
     assert cancelled
     assert called
