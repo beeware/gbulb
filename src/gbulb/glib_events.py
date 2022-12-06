@@ -317,6 +317,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         extra=None,
         server=None,
         ssl_handshake_timeout=None,
+        ssl_shutdown_timeout=None,
     ):
         """Create SSL transport."""
         # sslproto._is_sslproto_available was removed from asyncio, starting from Python 3.7.
@@ -329,10 +330,13 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
                 " or newer (ssl.MemoryBIO) to support "
                 "SSL"
             )
-        # Support for the ssl_handshake_timeout keyword argument was added in Python 3.7.
         extra_protocol_kwargs = {}
+        # Support for the ssl_handshake_timeout keyword argument was added in Python 3.7.
         if sys.version_info[:2] >= (3, 7):
             extra_protocol_kwargs["ssl_handshake_timeout"] = ssl_handshake_timeout
+        # Support for the ssl_shutdown_timeout keyword argument was added in Python 3.11.
+        if sys.version_info[:2] >= (3, 11):
+            extra_protocol_kwargs["ssl_shutdown_timeout"] = ssl_shutdown_timeout
 
         ssl_protocol = sslproto.SSLProtocol(
             self,
@@ -429,6 +433,7 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         server=None,
         backlog=100,
         ssl_handshake_timeout=getattr(constants, "SSL_HANDSHAKE_TIMEOUT", 60.0),
+        ssl_shutdown_timeout=getattr(constants, "SSL_SHUTDOWN_TIMEOUT", 60.0),
     ):
         self._transports[sock.fileno()] = server
 
@@ -438,7 +443,6 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
                     (conn, addr) = f.result()
                     protocol = protocol_factory()
                     if sslcontext is not None:
-                        # FIXME: add ssl_handshake_timeout to this call once 3.7 support is merged in.
                         self._make_ssl_transport(
                             conn,
                             protocol,
@@ -446,6 +450,8 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
                             server_side=True,
                             extra={"peername": addr},
                             server=server,
+                            ssl_handshake_timeout=ssl_handshake_timeout,
+                            ssl_shutdown_timeout=ssl_shutdown_timeout,
                         )
                     else:
                         self._make_socket_transport(
