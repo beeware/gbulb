@@ -14,10 +14,10 @@ gbulb
    :alt: Maturity
 
 .. image:: https://img.shields.io/pypi/l/gbulb.svg
-   :target: https://github.com/beeware/gbulb/blob/master/LICENSE
+   :target: https://github.com/beeware/gbulb/blob/main/LICENSE
    :alt: BSD License
 
-.. image:: https://github.com/beeware/gbulb/workflows/CI/badge.svg?branch=master
+.. image:: https://github.com/beeware/gbulb/workflows/CI/badge.svg?branch=main
    :target: https://github.com/beeware/gbulb/actions
    :alt: Build Status
 
