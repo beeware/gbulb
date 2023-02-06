@@ -5,84 +5,50 @@ on:
     branches:
       - main
 
-env:
-  min_python_version: "3.9"
-
 jobs:
   pre-commit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3.1.0
-      - uses: actions/setup-python@v4.3.0
-        with:
-          python-version: ${{ env.min_python_version }}
-      - uses: pre-commit/action@v3.0.0
+    name: Pre-commit checks
+    uses: beeware/.github/.github/workflows/pre-commit-run.yml@main
+    with:
+      pre-commit-source: "pre-commit"
 
   towncrier:
-    runs-on: ubuntu-latest
-    steps:
-    # Fetch main branch for comparison, then check out current branch.
-    - uses: actions/checkout@v3.1.0
-      with:
-        fetch-depth: 0
-        ref: main
-    - uses: actions/checkout@v3.1.0
-      with:
-        fetch-depth: 0
-    - name: Set up Python 3.X
-      uses: actions/setup-python@v4.3.0
-      with:
-        python-version: "3.X"
-    - name: Install dependencies
-      run: |
-        pip install tox
-    - name: Run Towncrier
-      run: |
-        tox -e towncrier-check
+    name: Check towncrier
+    uses: beeware/.github/.github/workflows/towncrier-run.yml@main
+    with:
+      tox-source: "tox"
 
   package:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v3.1.0
-      with:
-        fetch-depth: 0
-    - name: Set up Python 3.X
-      uses: actions/setup-python@v4.3.0
-      with:
-        python-version: "3.X"
-    - name: Install dependencies
-      run: |
-        pip install tox
-    - name: Run pre-test check
-      run: |
-        tox -e package
+    name: Python Package
+    uses: beeware/.github/.github/workflows/python-package-create.yml@main
+    with:
+      tox-source: "tox"
 
   python-versions:
     name: Python compatibility test
-    needs:
-    - pre-commit
-    - towncrier
-    - package
+    needs: [ pre-commit, towncrier, package ]
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.experimental }}
     strategy:
       matrix:
-        python-version: ["3.7", "3.8", "3.9", "3.10", "3.11", "3.12-dev"]
+        python-version: [ "3.7", "3.8", "3.9", "3.10", "3.11", "3.12-dev" ]
         include:
           - experimental: false
-
           - python-version: "3.12-dev"
             experimental: true
     steps:
-    - uses: actions/checkout@v3.1.0
+    - name: Checkout
+      uses: actions/checkout@v3.1.0
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4.3.0
       with:
         python-version: ${{ matrix.python-version }}
+
     - name: Install dependencies
       run: |
         sudo apt-get install -y python3-dev python3-gi gir1.2-gtk-3.0 libgirepository1.0-dev pkg-config
         pip install tox
+
     - name: Test
-      run: |
-        tox -e py
+      run: tox -e py
