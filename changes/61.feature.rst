@@ -1,1 +1,1 @@
-Support for Python 3.11 and 3.12 was added.
+Support for Python 3.11 was added.
