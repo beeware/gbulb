@@ -52,7 +52,14 @@ def test_get_event_loop():
 
     import gbulb
 
-    assert asyncio.get_event_loop() is gbulb.get_event_loop()
+    try:
+        loop = gbulb.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        assert asyncio.get_event_loop() is gbulb.get_event_loop()
+
+    finally:
+        loop.close()
 
 
 def test_wait_signal(glib_loop):

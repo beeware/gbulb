@@ -1,0 +1,1 @@
+Initial support for Python 3.12 was added.

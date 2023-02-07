@@ -1,7 +1,7 @@
 import asyncio
 import weakref
 
-__all__ = ["install", "get_event_loop", "wait_signal"]
+__all__ = ["install", "get_event_loop", "new_event_loop", "wait_signal"]
 
 
 def install(gtk=False):
@@ -39,6 +39,11 @@ def install(gtk=False):
 def get_event_loop():
     """Alias to asyncio.get_event_loop()."""
     return asyncio.get_event_loop()
+
+
+def new_event_loop():
+    """Alias to asyncio.new_event_loop()."""
+    return asyncio.new_event_loop()
 
 
 class wait_signal(asyncio.Future):
