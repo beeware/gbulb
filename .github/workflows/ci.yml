@@ -9,14 +9,20 @@ jobs:
   pre-commit:
     name: Pre-commit checks
     uses: beeware/.github/.github/workflows/pre-commit-run.yml@main
+    with:
+      pre-commit-source: "pre-commit"
 
   towncrier:
     name: Check towncrier
     uses: beeware/.github/.github/workflows/towncrier-run.yml@main
+    with:
+      tox-source: "tox"
 
   package:
     name: Python Package
     uses: beeware/.github/.github/workflows/python-package-create.yml@main
+    with:
+      tox-source: "tox"
 
   python-versions:
     name: Python compatibility test
@@ -28,7 +34,6 @@ jobs:
         python-version: [ "3.7", "3.8", "3.9", "3.10", "3.11", "3.12-dev" ]
         include:
           - experimental: false
-
           - python-version: "3.12-dev"
             experimental: true
     steps:
