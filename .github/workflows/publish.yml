@@ -7,6 +7,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      # This permission is required for trusted publishing.
+      id-token: write
     steps:
     - uses: actions/checkout@v3.5.2
 
@@ -27,8 +30,4 @@ jobs:
         tox -e package
 
     - name: Publish release
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
-      run: |
-        tox -e publish
+      uses: pypa/gh-action-pypi-publish@release/v1
