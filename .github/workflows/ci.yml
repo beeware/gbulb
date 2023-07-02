@@ -5,6 +5,14 @@ on:
     branches:
       - main
 
+# Cancel active CI runs for a PR before starting another run
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_COLOR: "1"
+
 jobs:
   pre-commit:
     name: Pre-commit checks
