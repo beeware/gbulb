@@ -76,8 +76,7 @@ def test_wait_signal(glib_loop):
 
     t = TestObject()
 
-    def emitter():
-        yield
+    async def emitter():
         t.emit("foo", "frozen brains tell no tales")
 
     called = False
@@ -115,16 +114,16 @@ def test_wait_signal_cancel(glib_loop):
 
     t = TestObject()
 
-    def emitter():
-        yield
+    async def emitter():
         t.emit("foo", "frozen brains tell no tales")
 
     called = False
     cancelled = False
 
-    def waiter():
+    async def waiter():
         nonlocal cancelled
-        yield
+        # Yield to the event loop
+        await asyncio.sleep(0)
 
         r = wait_signal(t, "foo")
 
