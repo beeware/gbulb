@@ -1,29 +1,31 @@
-gbulb
-=====
-
-.. image:: https://img.shields.io/pypi/pyversions/gbulb.svg
+.. |pyversions| image:: https://img.shields.io/pypi/pyversions/gbulb.svg
    :target: https://pypi.python.org/pypi/gbulb
    :alt: Python Versions
 
-.. image:: https://img.shields.io/pypi/v/gbulb.svg
+.. |version| image:: https://img.shields.io/pypi/v/gbulb.svg
    :target: https://pypi.python.org/pypi/gbulb
    :alt: PyPI Version
 
-.. image:: https://img.shields.io/pypi/status/gbulb.svg
+.. |maturity| image:: https://img.shields.io/pypi/status/gbulb.svg
    :target: https://pypi.python.org/pypi/gbulb
    :alt: Maturity
 
-.. image:: https://img.shields.io/pypi/l/gbulb.svg
+.. |license| image:: https://img.shields.io/pypi/l/gbulb.svg
    :target: https://github.com/beeware/gbulb/blob/main/LICENSE
    :alt: BSD License
 
-.. image:: https://github.com/beeware/gbulb/workflows/CI/badge.svg?branch=main
+.. |ci| image:: https://github.com/beeware/gbulb/workflows/CI/badge.svg?branch=main
    :target: https://github.com/beeware/gbulb/actions
    :alt: Build Status
 
-.. image:: https://img.shields.io/discord/836455665257021440?label=Discord%20Chat&logo=discord&style=plastic
+.. |social| image:: https://img.shields.io/discord/836455665257021440?label=Discord%20Chat&logo=discord&style=plastic
    :target: https://beeware.org/bee/chat/
    :alt: Discord server
+
+gbulb
+=====
+
+|pyversions| |version| |maturity| |license| |ci| |social|
 
 Gbulb is a Python library that implements a `PEP 3156
 <http://www.python.org/dev/peps/pep-3156/>`__ interface for the `GLib main event
