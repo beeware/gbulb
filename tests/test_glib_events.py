@@ -89,7 +89,7 @@ class TestBaseGLibEventLoop:
         glib_loop.call_later(0.01, os.kill, os.getpid(), signal.SIGHUP)
         glib_loop.run_forever()
 
-        assert called, "signal handler didnt fire"
+        assert called, "signal handler didn't fire"
 
     @skipIf(is_windows, "Unix signal handlers are not supported on Windows")
     def test_remove_signal_handler(self, glib_loop):
@@ -155,7 +155,7 @@ class TestBaseGLibEventLoop:
         os.close(rfd)
         os.close(wfd)
 
-        assert called, "callback handler didnt fire"
+        assert called, "callback handler didn't fire"
 
     @skipIf(
         is_windows, "Waiting on raw file descriptors only works for sockets on Windows"
@@ -181,7 +181,7 @@ class TestBaseGLibEventLoop:
         os.close(rfd)
         os.close(wfd)
 
-        assert called, "callback handler didnt fire"
+        assert called, "callback handler didn't fire"
 
     @skipIf(
         is_windows, "Waiting on raw file descriptors only works for sockets on Windows"
@@ -279,7 +279,7 @@ class TestBaseGLibEventLoop:
         glib_loop.call_at(s + 0.1, handler)
         glib_loop.run_forever()
 
-        assert called, "call_at handler didnt fire"
+        assert called, "call_at handler didn't fire"
 
     def test_call_soon_no_coroutine(self, glib_loop):
         with pytest.raises(TypeError):
@@ -360,7 +360,7 @@ class TestBaseGLibEventLoop:
         glib_loop.call_soon_threadsafe(handler)
         glib_loop.run_forever()
 
-        assert called, "call_soon_threadsafe handler didnt fire"
+        assert called, "call_soon_threadsafe handler didn't fire"
 
 
 class TestGLibEventLoop:
