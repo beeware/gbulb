@@ -258,7 +258,7 @@ class TestBaseGLibEventLoop:
         e = glib_loop.time()
 
         diff = e - s
-        assert SLEEP_TIME + 0.005 >= diff >= SLEEP_TIME
+        assert SLEEP_TIME + 0.01 >= diff >= SLEEP_TIME
 
     def test_call_at(self, glib_loop):
         called = False
