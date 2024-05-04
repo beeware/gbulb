@@ -38,7 +38,7 @@ If you notice any differences, please report them.
 Requirements
 ------------
 
-- python 3.7+
+- python 3.8+
 - pygobject
 - glib
 - gtk+3 (optional)
@@ -128,6 +128,39 @@ actually prevent you from doing that (in accordance with PEP 3156), however
 ``GtkEventLoop`` will allow you to call ``run()`` recursively. You should also keep
 in mind that enclosed loops may be started at any time by third-party code
 calling GLib's primitives.
+
+Testing
+-------
+
+Testing GBulb requires a Linux environment that has GLib and GTK development
+libraries available.
+
+The tests folder contains a Dockerfile that defines a complete testing
+environment. To use the Docker environment, run the following from the root of
+the git checkout:
+
+   $ docker buildx build --tag beeware/gbulb:latest --file ./tests/Dockerfile .
+   $ docker run --rm --volume $(PWD):/home/brutus/gbulb:z -it beeware/gbulb:latest
+
+This will drop you into an Ubuntu 24.04 shell that has Python 3.8-3.13
+installed, mounting the current working directory as `/home/brutus/gbulb`. You
+can use this to create virtual environments for each Python version.
+
+Once you have an active virtual environment, run:
+
+   (venv) $ pip install -e .[dev]
+   (venv) $ pytest
+
+to run the test suite. Alternatively, you can install tox, and then run:
+
+   # To test a single Python version
+   (venv) $ tox -e py
+
+   # To test Python 3.10 specifically
+   (venv) $ tox -e py310
+
+   # To test all versions
+   (venv) $ tox
 
 Community
 ---------
