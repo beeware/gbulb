@@ -105,8 +105,7 @@ class ReadTransport(BaseTransport, transports.ReadTransport):
         self._loop.call_soon(self._loop_reading)
 
     def set_protocol(self, protocol):
-        if hasattr(asyncio, "BufferedProtocol"):  # Python 3.7+
-            self._alloc_read_buffers = isinstance(protocol, asyncio.BufferedProtocol)
+        self._alloc_read_buffers = isinstance(protocol, asyncio.BufferedProtocol)
         super().set_protocol(protocol)
 
     def pause_reading(self):
