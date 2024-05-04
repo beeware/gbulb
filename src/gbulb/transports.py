@@ -1,6 +1,7 @@
 import collections
 import socket
 import subprocess
+import sys
 from asyncio import CancelledError, InvalidStateError, base_subprocess, transports
 
 
@@ -24,7 +25,10 @@ class BaseTransport(transports.BaseTransport):
             self._loop._transports[sock.fileno()] = self
 
         if self._server is not None:
-            self._server._attach()
+            if sys.version_info < (3, 13):
+                self._server._attach()
+            else:
+                self._server._attach(self)
 
         def transport_async_init():
             self._protocol.connection_made(self)
@@ -78,7 +82,10 @@ class BaseTransport(transports.BaseTransport):
                 self._sock.close()
                 self._sock = None
             if self._server is not None:
-                self._server._detach()
+                if sys.version_info < (3, 13):
+                    self._server._detach()
+                else:
+                    self._server._detach(self)
                 self._server = None
 
 

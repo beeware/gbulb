@@ -6,6 +6,7 @@ import signal
 import socket
 import sys
 import threading
+import warnings
 import weakref
 from asyncio import CancelledError, constants, events, sslproto, tasks
 
@@ -51,92 +52,95 @@ else:
     from asyncio.unix_events import AbstractChildWatcher
 
 
-class GLibChildWatcher(AbstractChildWatcher):
-    def __init__(self):
-        self._sources = {}
-        self._handles = {}
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
 
-    # On windows on has to open a process handle for the given PID number
-    # before it's possible to use GLib's `child_watch_add` on it
-    if sys.platform == "win32":
+    class GLibChildWatcher(AbstractChildWatcher):
+        def __init__(self):
+            self._sources = {}
+            self._handles = {}
 
-        def _create_handle_for_pid(self, pid):
-            import _winapi
+        # On windows on has to open a process handle for the given PID number
+        # before it's possible to use GLib's `child_watch_add` on it
+        if sys.platform == "win32":
 
-            return _winapi.OpenProcess(0x00100400, 0, pid)
+            def _create_handle_for_pid(self, pid):
+                import _winapi
 
-        def _close_process_handle(self, handle):
-            import _winapi
+                return _winapi.OpenProcess(0x00100400, 0, pid)
 
-            _winapi.CloseHandle(handle)
+            def _close_process_handle(self, handle):
+                import _winapi
 
-    else:
+                _winapi.CloseHandle(handle)
 
-        def _create_handle_for_pid(self, pid):
-            return pid
+        else:
 
-        def _close_process_handle(self, pid):
-            return None
+            def _create_handle_for_pid(self, pid):
+                return pid
 
-    def attach_loop(self, loop):
-        # just ignored
-        pass
+            def _close_process_handle(self, pid):
+                return None
 
-    def add_child_handler(self, pid, callback, *args):
-        self.remove_child_handler(pid)
+        def attach_loop(self, loop):
+            # just ignored
+            pass
 
-        handle = self._create_handle_for_pid(pid)
-        source = GLib.child_watch_add(0, handle, self.__callback__)
-        self._sources[pid] = source, callback, args, handle
-        self._handles[handle] = pid
+        def add_child_handler(self, pid, callback, *args):
+            self.remove_child_handler(pid)
 
-    def remove_child_handler(self, pid):
-        try:
-            source, callback, args, handle = self._sources.pop(pid)
-            assert self._handles.pop(handle) == pid
-        except KeyError:
-            return False
+            handle = self._create_handle_for_pid(pid)
+            source = GLib.child_watch_add(0, handle, self.__callback__)
+            self._sources[pid] = source, callback, args, handle
+            self._handles[handle] = pid
 
-        self._close_process_handle(handle)
-        GLib.source_remove(source)
-        return True
+        def remove_child_handler(self, pid):
+            try:
+                source, callback, args, handle = self._sources.pop(pid)
+                assert self._handles.pop(handle) == pid
+            except KeyError:
+                return False
 
-    def close(self):
-        for source, callback, args, handle in self._sources.values():
             self._close_process_handle(handle)
             GLib.source_remove(source)
-        self._sources = {}
-        self._handles = {}
+            return True
 
-    def __enter__(self):
-        return self
+        def close(self):
+            for source, callback, args, handle in self._sources.values():
+                self._close_process_handle(handle)
+                GLib.source_remove(source)
+            self._sources = {}
+            self._handles = {}
 
-    def __exit__(self, a, b, c):
-        pass
+        def __enter__(self):
+            return self
 
-    def __callback__(self, handle, status):
-        try:
-            pid = self._handles.pop(handle)
-            source, callback, args, handle = self._sources.pop(pid)
-        except KeyError:
-            return
+        def __exit__(self, a, b, c):
+            pass
 
-        self._close_process_handle(handle)
-        GLib.source_remove(source)
+        def __callback__(self, handle, status):
+            try:
+                pid = self._handles.pop(handle)
+                source, callback, args, handle = self._sources.pop(pid)
+            except KeyError:
+                return
 
-        if hasattr(os, "WIFSIGNALED") and os.WIFSIGNALED(status):
-            returncode = -os.WTERMSIG(status)
-        elif hasattr(os, "WIFEXITED") and os.WIFEXITED(status):
-            returncode = os.WEXITSTATUS(status)
+            self._close_process_handle(handle)
+            GLib.source_remove(source)
 
-            # FIXME: Hack for adjusting invalid status returned by GLIB
-            #    Looks like there is a bug in glib or in pygobject
-            if returncode > 128:
-                returncode = 128 - returncode
-        else:
-            returncode = status
+            if hasattr(os, "WIFSIGNALED") and os.WIFSIGNALED(status):
+                returncode = -os.WTERMSIG(status)
+            elif hasattr(os, "WIFEXITED") and os.WIFEXITED(status):
+                returncode = os.WEXITSTATUS(status)
 
-        callback(pid, returncode, *args)
+                # FIXME: Hack for adjusting invalid status returned by GLIB
+                #    Looks like there is a bug in glib or in pygobject
+                if returncode > 128:
+                    returncode = 128 - returncode
+            else:
+                returncode = status
+
+            callback(pid, returncode, *args)
 
 
 class GLibHandle(events.Handle):
@@ -383,7 +387,11 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         **kwargs,
     ):
         """Create subprocess transport."""
-        with events.get_child_watcher() as watcher:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            watcher = events.get_child_watcher()
+
+        with watcher:
             waiter = asyncio.Future(loop=self)
             transport = transports.SubprocessTransport(
                 self,
