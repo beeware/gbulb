@@ -1,7 +1,11 @@
 import asyncio
+import sys
 import weakref
 
-__all__ = ["install", "get_event_loop", "wait_signal"]
+if sys.version_info < (3, 14):
+    from .glib_events import GLibChildWatcher
+
+__all__ = ["install", "get_event_loop", "new_event_loop", "wait_signal"]
 
 
 def install(gtk=False):
@@ -27,18 +31,21 @@ def install(gtk=False):
 
         policy = GLibEventLoopPolicy()
 
-    # There are some libraries that use SafeChildWatcher directly (which is
-    # completely reasonable), so we have to ensure that it is our version. I'm
-    # sorry, I know this isn't great but it's basically the best that we have.
-    from .glib_events import GLibChildWatcher
-
-    asyncio.SafeChildWatcher = GLibChildWatcher
+    if sys.version_info < (3, 14):
+        # There are some libraries that use SafeChildWatcher directly (which is
+        # completely reasonable), so we have to ensure that it is our version.
+        asyncio.SafeChildWatcher = GLibChildWatcher
     asyncio.set_event_loop_policy(policy)
 
 
 def get_event_loop():
     """Alias to asyncio.get_event_loop()."""
     return asyncio.get_event_loop()
+
+
+def new_event_loop():
+    """Alias to asyncio.new_event_loop()."""
+    return asyncio.new_event_loop()
 
 
 class wait_signal(asyncio.Future):

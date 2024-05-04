@@ -3,15 +3,42 @@ Change Log
 
 .. towncrier release notes start
 
+0.6.4 (2023-02-07)
+------------------
+
+Features
+--------
+
+* Support for Python 3.11 was added. (`#61
+  <https://github.com/beeware/gbulb/issues/61`__`)
+* Initial support for Python 3.12 was added. (`#69
+  <https://github.com/beeware/gbulb/issues/69`__`)
+
+
+Bugfixes
+--------
+
+* The GTK event loop no longer forces the use of the default GLib main context
+  on every instance. (`#59 <https://github.com/beeware/gbulb/issues/59`__`)
+
+
+Misc
+----
+
+* #62, #64
+
+
 0.6.3 (2022-02-20)
 ------------------
 
 Bugfixes
 ^^^^^^^^
 
-* Corrected the import of ``InvalidStateError`` to fix an error seen on Python 3.8+. (`#56 <https://github.com/beeware/gbulb/issues/56>`__)
+* Corrected the import of ``InvalidStateError`` to fix an error seen on Python
+  3.8+. (`#56 <https://github.com/beeware/gbulb/issues/56>`__)
 
-* Reverted the fix from #47; that change led to file descriptor leaks. (`#52 <https://github.com/beeware/gbulb/issues/52>`__)
+* Reverted the fix from #47; that change led to file descriptor leaks. (`#52
+  <https://github.com/beeware/gbulb/issues/52>`__)
 
 
 0.6.2 (2021-10-24)
@@ -20,17 +47,19 @@ Bugfixes
 Features
 ^^^^^^^^
 
-* Added support for Python 3.10. (`#50 <https://github.com/beeware/gbulb/issues/50>`__)
+* Added support for Python 3.10. (`#50
+  <https://github.com/beeware/gbulb/issues/50>`__)
 
 Bugfixes
 ^^^^^^^^
 
-* Corrects a problem where a socket isn't forgotten and causes 100% CPU load. (`#47 <https://github.com/beeware/gbulb/issues/47>`__)
+* Corrects a problem where a socket isn't forgotten and causes 100% CPU load.
+  (`#47 <https://github.com/beeware/gbulb/issues/47>`__)
 
 Improved Documentation
 ^^^^^^^^^^^^^^^^^^^^^^
 
-* (`#49 <https://github.com/beeware/gbulb/issues/49>`__)
+* #49
 
 
 0.6.1 (2018-08-09)

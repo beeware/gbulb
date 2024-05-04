@@ -1,1 +1,0 @@
-Black and pre-commit were added to the project configuration.
