@@ -659,15 +659,26 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         channel = self._channel_from_socket(sock)
 
         def read_func(channel, nbytes):
-            return sock.recv(nbytes, flags)
+            if not sock._closed:
+                return sock.recv(nbytes, flags)
 
         return self._channel_read(channel, nbytes, read_func)
+
+    def sock_recv_into(self, sock, buf, flags=0):
+        channel = self._channel_from_socket(sock)
+
+        def read_func(channel, nbytes):
+            if not sock._closed:
+                return sock.recv_into(buf, flags)
+
+        return self._channel_read(channel, len(buf), read_func)
 
     def sock_recvfrom(self, sock, nbytes, flags=0):
         channel = self._channel_from_socket(sock)
 
         def read_func(channel, nbytes):
-            return sock.recvfrom(nbytes, flags)
+            if not sock._closed:
+                return sock.recvfrom(nbytes, flags)
 
         return self._channel_read(channel, nbytes, read_func)
 
@@ -675,7 +686,8 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         channel = self._channel_from_socket(sock)
 
         def write_func(channel, buf):
-            return sock.send(buf, flags)
+            if not sock._closed:
+                return sock.send(buf, flags)
 
         return self._channel_write(channel, buf, write_func)
 
@@ -683,7 +695,8 @@ class GLibBaseEventLoop(_BaseEventLoop, GLibBaseEventLoopPlatformExt):
         channel = self._channel_from_socket(sock)
 
         def write_func(channel, buf):
-            return sock.sendto(buf, flags, addr)
+            if not sock._closed:
+                return sock.sendto(buf, flags, addr)
 
         return self._channel_write(channel, buf, write_func)
 
