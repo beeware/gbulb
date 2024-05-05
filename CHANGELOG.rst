@@ -3,23 +3,54 @@ Change Log
 
 .. towncrier release notes start
 
+0.6.5 (2024-05-05)
+==================
+
+Features
+--------
+
+* Support for driving ``BufferedProtocol`` instances using ``sock_recv_into`` was added. (`#58 <https://github.com/beeware/briefcase/issues/58>`__)
+* Support for Python 3.12 was added. (`#76 <https://github.com/beeware/briefcase/issues/76>`__)
+* Support for Python 3.13 was added. (`#76 <https://github.com/beeware/briefcase/issues/76>`__)
+
+
+Bugfixes
+--------
+
+* Support for using a generator as a co-routine has been removed, in line with the change in behavior in Python 3.12. Python 3.11 and earlier will still support this usage, but it is no longer verified as part of GBulb. (`#78 <https://github.com/beeware/briefcase/issues/78>`__)
+
+
+Backward Incompatible Changes
+-----------------------------
+
+* Support for Python 3.7 was removed. (`#137 <https://github.com/beeware/briefcase/issues/137>`__)
+
+
+Documentation
+-------------
+
+* The README badges were updated to display correctly on GitHub. (`#136 <https://github.com/beeware/briefcase/issues/136>`__)
+
+Misc
+----
+
+* #68, #70, #71, #72, #74, #75, #77, #79, #80, #81, #82, #83, #84, #85, #86, #90, #91, #92, #93, #94, #95, #96, #97, #98, #99, #100, #101, #103, #104, #105, #106, #107, #108, #109, #112, #113, #114, #115, #118, #119, #120, #121, #122, #123, #124, #125, #126, #127, #128, #129, #130, #131, #132, #133, #134, #135
+
+
 0.6.4 (2023-02-07)
 ------------------
 
 Features
 --------
 
-* Support for Python 3.11 was added. (`#61
-  <https://github.com/beeware/gbulb/issues/61`__`)
-* Initial support for Python 3.12 was added. (`#69
-  <https://github.com/beeware/gbulb/issues/69`__`)
+* Support for Python 3.11 was added. (`#61 <https://github.com/beeware/gbulb/issues/61`__`)
+* Initial support for Python 3.12 was added. (`#69 <https://github.com/beeware/gbulb/issues/69`__`)
 
 
 Bugfixes
 --------
 
-* The GTK event loop no longer forces the use of the default GLib main context
-  on every instance. (`#59 <https://github.com/beeware/gbulb/issues/59`__`)
+* The GTK event loop no longer forces the use of the default GLib main context on every instance. (`#59 <https://github.com/beeware/gbulb/issues/59`__`)
 
 
 Misc

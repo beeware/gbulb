@@ -1,1 +1,0 @@
-Support for using a generator as a co-routine has been removed, in line with the change in behavior in Python 3.12. Python 3.11 and earlier will still support this usage, but it is no longer verified as part of GBulb.

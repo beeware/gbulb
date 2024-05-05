@@ -1,1 +1,0 @@
-The ``python3-gi`` package was removed from the Linux system dependencies for running CI.
