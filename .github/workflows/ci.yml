@@ -4,6 +4,16 @@ on:
   push:
     branches:
       - main
+  workflow_call:
+    inputs:
+      attest-package:
+        description: "Create GitHub provenance attestation for the package."
+        default: "false"
+        type: string
+    outputs:
+      artifact-name:
+        description: "Name of the uploaded artifact; use for artifact retrieval."
+        value: ${{ jobs.package.outputs.artifact-name }}
 
 # Cancel active CI runs for a PR before starting another run
 concurrency:
@@ -27,10 +37,14 @@ jobs:
       tox-source: "tox"
 
   package:
-    name: Python Package
+    name: Package gbulb
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
     uses: beeware/.github/.github/workflows/python-package-create.yml@main
     with:
-      tox-source: "tox"
+      attest: ${{ inputs.attest-package }}
 
   python-versions:
     name: Python compatibility test
@@ -47,22 +61,30 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4.1.6
+      with:
+        fetch-depth: 0
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5.1.0
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Install system dependencies
+    - name: Get Packages
+      uses: actions/download-artifact@v4.1.7
+      with:
+        name: ${{ needs.package.outputs.artifact-name }}
+        path: dist
+
+    - name: Install System Dependencies
       run: |
         sudo apt update -y
         sudo apt install -y pkg-config python3-dev libgirepository1.0-dev gir1.2-gtk-3.0
 
     - name: Install Tox
-      run: |
-        # We don't actually want to install gbulb; we just want the dev extras
-        # so that we have a known version of coverage
-        python -m pip install -e .[dev]
+      uses: beeware/.github/.github/actions/install-requirement@main
+      with:
+        requirements: tox
+        extra: dev
 
     - name: Test
-      run: tox -e py
+      run: tox -e py --installpkg dist/gbulb-*.whl
