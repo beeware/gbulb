@@ -50,7 +50,7 @@ dependencies = [
 # Extras used by developers *of* gbulb are pinned to specific versions to
 # ensure environment consistency.
 dev = [
-    "coverage[toml] == 7.6.0",
+    "coverage[toml] == 7.6.1",
     # Pre-commit 3.6.0 deprecated support for Python 3.8
     "pre-commit == 3.5.0 ; python_version < '3.9'",
     "pre-commit == 3.8.0 ; python_version >= '3.9'",
