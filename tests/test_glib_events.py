@@ -1,5 +1,7 @@
 import asyncio
+import os
 import sys
+import tempfile
 from unittest import mock, skipIf
 
 import pytest
@@ -571,6 +573,46 @@ def test_sockets(glib_loop):
         writer.close()
 
         await server_done.wait()
+
+        assert server_success
+
+    glib_loop.run_until_complete(run())
+
+
+def test_unix_sockets(glib_loop):
+    server_done = asyncio.Event()
+    server_done._loop = glib_loop
+    server_success = False
+
+    async def cb(reader, writer):
+        nonlocal server_success
+
+        writer.write(b"cool data\n")
+        await writer.drain()
+
+        print("reading")
+        d = await reader.readline()
+        print("hrm", d)
+        server_success = d == b"thank you\n"
+
+        writer.close()
+        server_done.set()
+
+    async def run():
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "socket")
+            await asyncio.start_unix_server(cb, path)
+            reader, writer = await asyncio.open_unix_connection(path)
+
+            d = await reader.readline()
+            assert d == b"cool data\n"
+
+            writer.write(b"thank you\n")
+            await writer.drain()
+
+            writer.close()
+
+            await server_done.wait()
 
         assert server_success
 
