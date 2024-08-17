@@ -201,6 +201,7 @@ else:
 
         def __init__(self):
             self._sighandlers = {}
+            self._unix_server_sockets = {}
 
         def close(self):
             for sig in list(self._sighandlers):
