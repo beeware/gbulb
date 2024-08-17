@@ -590,9 +590,7 @@ def test_unix_sockets(glib_loop):
         writer.write(b"cool data\n")
         await writer.drain()
 
-        print("reading")
         d = await reader.readline()
-        print("hrm", d)
         server_success = d == b"thank you\n"
 
         writer.close()
