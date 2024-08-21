@@ -349,7 +349,7 @@ class SocketTransport(Transport):
                 if not self._closing:
                     self._sock.shutdown(socket.SHUT_WR)
 
-            self._buffer_empty_callbacks.add(transport_write_eof_callback)
+            self._drained_callbacks.add(transport_write_eof_callback)
 
 
 class DatagramTransport(Transport, transports.DatagramTransport):
