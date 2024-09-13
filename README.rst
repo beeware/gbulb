@@ -21,8 +21,9 @@ Example usage of PyGObject with native asyncio support::
     app = Gtk.Application(...)
     app.run()
 
-The last published version of this project (v0.6.6) is compatible with versions of
-PyGObject prior to 3.50.0.
+The last published version of this project (`v0.6.6
+<https://pypi.org/project/gbulb/0.6.6/>`__) is compatible with versions of
+PyGObject prior to 3.50.0, and CPython 3.8-3.13.
 
 .. |pyversions| image:: https://img.shields.io/pypi/pyversions/gbulb.svg
    :target: https://pypi.python.org/pypi/gbulb
