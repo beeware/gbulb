@@ -43,7 +43,7 @@ classifiers = [
 dependencies = [
     # Dependencies required at runtime are set as ranges to ensure maximum
     # compatibility with the end-user's development environment.
-    "pygobject >= 3.14.0",
+    "pygobject >= 3.14.0, < 3.50.0",
 ]
 
 [project.optional-dependencies]
