@@ -1,3 +1,29 @@
+THIS PROJECT HAS BEEN ARCHIVED
+==============================
+
+**With the release of PyGObject 3.50.0, GBulb is no longer required**. PyGObject
+now contains native integration with the Python event loop. If you require
+asyncio support in your GTK app, we advise upgrading your project to use the
+native asyncio API of `PyGObject 3.50.0+ <https://pypi.org/project/PyGObject/>`__.
+
+Example usage of PyGObject with native asyncio support::
+
+    import asyncio
+
+    import gi
+    gi.require_version("Gtk", "3.0")
+
+    from gi.events import GLibEventLoopPolicy
+    from gi.repository import Gtk
+
+    asyncio.set_event_loop_policy(GlibEventLoopPolicy())
+
+    app = Gtk.Application(...)
+    app.run()
+
+The last published version of this project (v0.6.6) is compatible with versions of
+PyGObject prior to 3.50.0.
+
 .. |pyversions| image:: https://img.shields.io/pypi/pyversions/gbulb.svg
    :target: https://pypi.python.org/pypi/gbulb
    :alt: Python Versions
