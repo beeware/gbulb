@@ -1,1 +1,0 @@
-PyGObject support was pinned to an upper version less than 3.50.0.

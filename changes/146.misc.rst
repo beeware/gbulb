@@ -1,1 +1,0 @@
-A workflow to update config files was added.

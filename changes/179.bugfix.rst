@@ -1,1 +1,0 @@
-``AttributeError: 'SocketTransport' object has no attribute '_buffer_empty_callbacks`` was fixed

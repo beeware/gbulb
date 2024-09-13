@@ -3,33 +3,47 @@ Change Log
 
 .. towncrier release notes start
 
+0.6.6 (2024-09-13)
+==================
+
+Bugfixes
+--------
+
+* Unix socket handling was corrected to support changes in Python 3.13. (`#176 <https://github.com/beeware/gbulb/issues/176>`__)
+* PyGObject support was pinned to an upper version less than 3.50.0. (`#185 <https://github.com/beeware/gbulb/issues/185>`__)
+
+Misc
+----
+
+* #138, #139, #140, #141, #142, #143, #144, #145, #146, #147, #148, #149, #150, #151, #152, #153, #154, #155, #156, #157, #158, #159, #160, #161, #162, #163, #164, #165, #166, #167, #168, #170, #172, #173, #175, #178, #180, #181, #182, #183, #184
+
 0.6.5 (2024-05-05)
 ==================
 
 Features
 --------
 
-* Support for driving ``BufferedProtocol`` instances using ``sock_recv_into`` was added. (`#58 <https://github.com/beeware/briefcase/issues/58>`__)
-* Support for Python 3.12 was added. (`#76 <https://github.com/beeware/briefcase/issues/76>`__)
-* Support for Python 3.13 was added. (`#76 <https://github.com/beeware/briefcase/issues/76>`__)
+* Support for driving ``BufferedProtocol`` instances using ``sock_recv_into`` was added. (`#58 <https://github.com/beeware/gbulb/issues/58>`__)
+* Support for Python 3.12 was added. (`#76 <https://github.com/beeware/gbulb/issues/76>`__)
+* Support for Python 3.13 was added. (`#76 <https://github.com/beeware/gbulb/issues/76>`__)
 
 
 Bugfixes
 --------
 
-* Support for using a generator as a co-routine has been removed, in line with the change in behavior in Python 3.12. Python 3.11 and earlier will still support this usage, but it is no longer verified as part of GBulb. (`#78 <https://github.com/beeware/briefcase/issues/78>`__)
+* Support for using a generator as a co-routine has been removed, in line with the change in behavior in Python 3.12. Python 3.11 and earlier will still support this usage, but it is no longer verified as part of GBulb. (`#78 <https://github.com/beeware/gbulb/issues/78>`__)
 
 
 Backward Incompatible Changes
 -----------------------------
 
-* Support for Python 3.7 was removed. (`#137 <https://github.com/beeware/briefcase/issues/137>`__)
+* Support for Python 3.7 was removed. (`#137 <https://github.com/beeware/gbulb/issues/137>`__)
 
 
 Documentation
 -------------
 
-* The README badges were updated to display correctly on GitHub. (`#136 <https://github.com/beeware/briefcase/issues/136>`__)
+* The README badges were updated to display correctly on GitHub. (`#136 <https://github.com/beeware/gbulb/issues/136>`__)
 
 Misc
 ----
